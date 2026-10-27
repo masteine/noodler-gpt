@@ -59,9 +59,14 @@ export class YouTubeMediaHandler implements alphaTab.synth.IExternalMediaHandler
    */
   private _pendingSeekMs: number | null = null
   private _timer: ReturnType<typeof setInterval> | null = null
+  /**
+   * Поки true, події плеєра YouTube не доходять до alphaTab: автосинхронізація сама керує відео
+   * (грає з початку й слухає), і alphaTab не має на це реагувати.
+   */
+  suspended = false
 
   constructor(
-    private readonly player: YtPlayerLike,
+    readonly player: YtPlayerLike,
     private readonly target: SyncTarget,
     private readonly intervalMs = 50,
   ) {
@@ -127,6 +132,7 @@ export class YouTubeMediaHandler implements alphaTab.synth.IExternalMediaHandler
 
   /** Обробник події onStateChange від плеєра YouTube. */
   onStateChange(state: number): void {
+    if (this.suspended) return
     switch (state) {
       case YtState.PLAYING:
         this._pendingSeekMs = null

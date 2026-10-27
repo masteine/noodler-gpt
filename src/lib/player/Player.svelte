@@ -15,6 +15,9 @@
   import Prefs from '../ui/Prefs.svelte'
   import { t, tn, type Key } from '../i18n/index.svelte'
   import { offsetOf, plainPoints, tapCount, withOffset, withTap, type BarRef, type FlatSyncPoint } from '../youtube/sync'
+  import { NoTabAudioError, TabAudioRecorder, isAutoSyncSupported } from '../autosync/capture'
+  import { CancelledError, NoNotesError, REF_SECONDS, autoSyncOffset, type AutoSyncProgress } from '../autosync/autosync'
+  import { notesFromScore } from '../autosync/score'
   // Ресурси alphaTab беремо через URL-імпорти Vite, щоб шляхи були правильні і в dev, і в build.
   import soundFontUrl from '@coderline/alphatab/soundfont/sonivox.sf3?url'
   import bravuraWoff2 from '@coderline/alphatab/font/Bravura.woff2?url'
@@ -83,6 +86,12 @@
   let ytUnavailable = $state(false)
   let handler: YouTubeMediaHandler | null = null
   let handlerReady = $state(false)
+  /** Іде автосинхронізація початку (прогрес) або null. */
+  let autoSync = $state<AutoSyncProgress | null>(null)
+  /** Підсумок останньої автосинхронізації для вікна бектреку. */
+  let autoSyncNote = $state<string | null>(null)
+  let autoSyncAbort: AbortController | null = null
+  const canAutoSync = isAutoSyncSupported()
   /** Перемкнутися на ORIG, щойно плеєр YouTube стане готовим. */
   let wantYoutube = false
   let searchSeq = 0
@@ -608,6 +617,70 @@
     if (handler) setOffset(handler.currentTimeMs)
   }
 
+  /**
+   * Автосинхронізація початку: захоплює звук вкладки, програє відео з початку й зіставляє
+   * хрому запису з нотами табу. Викликається з кліку: getDisplayMedia потребує жесту користувача.
+   */
+  async function runAutoSync() {
+    if (!api?.score || !api.tickCache || !handler || !isOrig || autoSync) return
+    const h = handler
+    api.stop()
+    h.suspended = true
+    autoSyncNote = null
+    autoSync = { phase: 'starting', seconds: 0, total: 0 }
+    const abort = new AbortController()
+    autoSyncAbort = abort
+    let recorder: TabAudioRecorder | null = null
+    try {
+      recorder = await TabAudioRecorder.open()
+      recorder.onended = () => abort.abort()
+      const notes = notesFromScore(api.score, api.tickCache, (REF_SECONDS + 60) * 1000)
+      const result = await autoSyncOffset({
+        player: h.player,
+        notes,
+        recorder,
+        signal: abort.signal,
+        onProgress: (p) => (autoSync = p),
+      })
+      if (result.confidence === 'poor') {
+        autoSyncNote = t('bt.autoPoor')
+      } else {
+        setOffset(result.offsetMs)
+        let note = t(result.confidence === 'good' ? 'bt.autoGood' : 'bt.autoFair', { time: fmtMs(result.offsetMs) })
+        if (result.shift !== 0) {
+          const up = result.shift <= 6
+          note += ' ' + t(up ? 'bt.autoHigher' : 'bt.autoLower', { n: up ? result.shift : 12 - result.shift })
+        }
+        autoSyncNote = note
+      }
+    } catch (e) {
+      if (e instanceof CancelledError) autoSyncNote = t('bt.autoCancelled')
+      else if (e instanceof NoTabAudioError) autoSyncNote = t('bt.autoNoAudio')
+      else if (e instanceof NoNotesError) autoSyncNote = t('bt.autoNoNotes')
+      else if (e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'AbortError')) autoSyncNote = t('bt.autoDenied')
+      else autoSyncNote = e instanceof Error ? e.message : String(e)
+    } finally {
+      recorder?.close()
+      autoSyncAbort = null
+      autoSync = null
+      h.suspended = false
+      // Відео лишаємо на паузі на початку; alphaTab стоїть на такті 1, наступний play піде зі зсуву.
+      h.player.pauseVideo()
+      api.stop()
+    }
+  }
+
+  function cancelAutoSync() {
+    autoSyncAbort?.abort()
+  }
+
+  function fmtMs(ms: number) {
+    const tenths = Math.round(ms / 100)
+    const m = Math.floor(tenths / 600)
+    const s = (tenths - m * 600) / 10
+    return `${m}:${s.toFixed(1).padStart(4, '0')}`
+  }
+
   function resetSync() {
     syncPoints = []
     applySyncPoints()
@@ -918,6 +991,11 @@
       {taps}
       canSwitch={handlerReady}
       canTap={isOrig && playing}
+      canAutoSync={canAutoSync && isOrig && handlerReady}
+      {autoSync}
+      {autoSyncNote}
+      onautosync={() => void runAutoSync()}
+      onautosynccancel={cancelAutoSync}
       onplayer={onYtPlayer}
       onstatechange={(s) => handler?.onStateChange(s)}
       onratechange={(r) => handler?.onPlaybackRateChange(r)}

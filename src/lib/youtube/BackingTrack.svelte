@@ -9,6 +9,7 @@
   import { getApiKey, setApiKey } from './settings'
   import { formatMs, parseMs } from './sync'
   import type { Source } from './handler'
+  import type { AutoSyncProgress } from '../autosync/autosync'
   import Icon from '../ui/Icon.svelte'
   import { t } from '../i18n/index.svelte'
 
@@ -28,6 +29,12 @@
     canSwitch: boolean
     /** Зараз грає в ORIG — можна ставити мітки. */
     canTap: boolean
+    /** Браузер уміє захопити звук вкладки, і ми в ORIG: показуємо «Авто». */
+    canAutoSync: boolean
+    /** Прогрес автосинхронізації або null, коли вона не йде. */
+    autoSync: AutoSyncProgress | null
+    /** Підсумок останньої автосинхронізації. */
+    autoSyncNote: string | null
     onplayer: (player: YT.Player | null) => void
     onstatechange: (state: number) => void
     onratechange: (rate: number) => void
@@ -39,6 +46,8 @@
     onoffsetnow: () => void
     ontap: () => void
     onresetsync: () => void
+    onautosync: () => void
+    onautosynccancel: () => void
     onclose: () => void
   }
 
@@ -54,6 +63,9 @@
     taps,
     canSwitch,
     canTap,
+    canAutoSync,
+    autoSync,
+    autoSyncNote,
     onplayer,
     onstatechange,
     onratechange,
@@ -65,6 +77,8 @@
     onoffsetnow,
     ontap,
     onresetsync,
+    onautosync,
+    onautosynccancel,
     onclose,
   }: Props = $props()
 
@@ -382,8 +396,27 @@
           <button class="step" onclick={() => nudge(100)} aria-label={t('bt.plus')} title={t('bt.plus')}>
             <Icon name="plus" size={14} />
           </button>
-          <button class="btn sm" onclick={onoffsetnow} disabled={!canSwitch} title={t('bt.nowTitle')}>{t('bt.now')}</button>
+          <button class="btn sm" onclick={onoffsetnow} disabled={!canSwitch || !!autoSync} title={t('bt.nowTitle')}>{t('bt.now')}</button>
+          {#if canAutoSync && !autoSync}
+            <button class="btn sm" onclick={onautosync} title={t('bt.autoTitle')}>{t('bt.auto')}</button>
+          {/if}
         </div>
+        {#if autoSync}
+          <div class="frow auto" role="status">
+            <span class="auto-text">
+              {#if autoSync.phase === 'listening'}
+                {t('bt.autoListening', { s: Math.floor(autoSync.seconds), total: Math.round(autoSync.total) })}
+              {:else if autoSync.phase === 'analyzing'}
+                {t('bt.autoAnalyzing')}
+              {:else}
+                {t('bt.autoStarting')}
+              {/if}
+            </span>
+            <button class="btn sm" onclick={onautosynccancel} disabled={autoSync.phase === 'analyzing'}>{t('bt.autoStop')}</button>
+          </div>
+        {:else if autoSyncNote}
+          <p class="hint auto-note" role="status">{autoSyncNote}</p>
+        {/if}
         <div class="frow">
           <button class="btn sm" onclick={ontap} disabled={!canTap} title={t('bt.tapTitle')}>
             {t('bt.tap')}{#if taps > 0}<span class="badge mono">{taps}</span>{/if}
@@ -394,7 +427,7 @@
           <span class="flabel narrow">{t('bt.volume')}</span>
           <input type="range" min="0" max="100" value={volume} oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))} />
         </label>
-        <p class="hint">{t('bt.syncHint')}</p>
+        <p class="hint">{t('bt.syncHint')}{#if canAutoSync} {t('bt.autoHint')}{/if}</p>
       </div>
     {/if}
   {/if}
@@ -711,6 +744,19 @@
     font-size: 12px;
     line-height: 1.4;
     color: var(--faint);
+  }
+
+  .auto {
+    justify-content: space-between;
+  }
+
+  .auto-text {
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .auto-note {
+    color: var(--text);
   }
 
   .unavailable {
