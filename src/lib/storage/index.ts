@@ -1,0 +1,5 @@
+export { listRecent, saveRecent, loadRecent, removeRecent, clearRecent } from './recent'
+export type { RecentEntry } from './recent'
+export { pickEvictions } from './evict'
+export { getLink, saveLink, removeLink, linkKey, MAX_LINKS } from './links'
+export type { BackingLink, FlatSyncPointLike } from './links'
