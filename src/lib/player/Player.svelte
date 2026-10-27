@@ -8,8 +8,9 @@
   import { getLink, saveLink, removeLink } from '../storage'
   import BackingTrack from '../youtube/BackingTrack.svelte'
   import { YouTubeMediaHandler, type Source, type SyncTarget } from '../youtube/handler'
-  import { SearchUnavailableError, buildQuery, searchYouTube, type YtResult } from '../youtube/search'
+  import { SearchFailedError, SearchUnavailableError, buildQuery, searchYouTube, type YtResult } from '../youtube/search'
   import { getApiKey } from '../youtube/settings'
+  import { t } from '../i18n/index.svelte'
   import { offsetOf, plainPoints, tapCount, withOffset, withTap, type BarRef, type FlatSyncPoint } from '../youtube/sync'
   // Ресурси alphaTab беремо через URL-імпорти Vite, щоб шляхи були правильні і в dev, і в build.
   import soundFontUrl from '@coderline/alphatab/soundfont/sonivox.sf3?url'
@@ -174,7 +175,7 @@
     // alphaTab може забрати буфер собі, тому в сховище кладемо окрему копію.
     const copy = persist ? data.slice().buffer : null
     if (!api.load(data)) {
-      error = `Не вдалося відкрити «${name}»`
+      error = t('player.openFailed', { name })
       return
     }
     if (copy) {
@@ -214,7 +215,7 @@
     setSource('synth')
     fileName = 'demo.alphatex'
     fileSize = 0
-    api.tex(demoTex)
+    api.tex(demoTex({ title: t('demo.title'), guitar: t('demo.guitar'), bass: t('demo.bass') }))
   }
 
   // --- транспорт ---
@@ -392,7 +393,7 @@
     const q = query.trim()
     if (!q) return
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      ytError = 'Немає мережі: пошук недоступний'
+      ytError = t('player.offline')
       return
     }
     const seq = ++searchSeq
@@ -403,10 +404,12 @@
       const found = await searchYouTube(q, { apiKey: getApiKey() })
       if (seq !== searchSeq) return
       ytResults = found
-      if (found.length === 0) ytError = 'Нічого не знайдено'
+      if (found.length === 0) ytError = t('player.nothingFound')
     } catch (e) {
       if (seq !== searchSeq) return
       if (e instanceof SearchUnavailableError) ytUnavailable = true
+      else if (e instanceof SearchFailedError)
+        ytError = e.status === null ? t('search.service') : t('search.http', { status: e.status })
       else ytError = e instanceof Error ? e.message : String(e)
     } finally {
       if (seq === searchSeq) ytSearching = false
@@ -555,7 +558,7 @@
   class="player"
   class:drag-over={dragOver}
   role="region"
-  aria-label="Плеєр табулатур"
+  aria-label={t('player.aria')}
   ondragover={(e) => {
     e.preventDefault()
     dragOver = true
@@ -572,30 +575,30 @@
   />
 
   <div class="toolbar">
-    <button class="primary" onclick={() => fileInput.click()}>Відкрити</button>
-    <button onclick={loadDemo}>Демо</button>
+    <button class="primary" onclick={() => fileInput.click()}>{t('player.open')}</button>
+    <button onclick={loadDemo}>{t('player.demo')}</button>
 
     <div class="song" title={fileName ?? ''}>
       {#if hasScore}
         <strong>{title || fileName}</strong>
         {#if artist}<span class="muted"> — {artist}</span>{/if}
       {:else}
-        <span class="muted">Файл не відкрито</span>
+        <span class="muted">{t('player.noFile')}</span>
       {/if}
     </div>
 
     {#if hasScore}
       <button class:active={showTracks} onclick={() => (showTracks = !showTracks)}>
-        Доріжки ({tracks.length})
+        {t('player.tracks', { n: tracks.length })}
       </button>
-      <div class="seg" role="group" aria-label="Вигляд">
-        <button class:active={view === 'both'} onclick={() => setView('both')}>Обидва</button>
-        <button class:active={view === 'tab'} onclick={() => setView('tab')}>Таби</button>
-        <button class:active={view === 'score'} onclick={() => setView('score')}>Ноти</button>
+      <div class="seg" role="group" aria-label={t('player.view')}>
+        <button class:active={view === 'both'} onclick={() => setView('both')}>{t('player.view.both')}</button>
+        <button class:active={view === 'tab'} onclick={() => setView('tab')}>{t('player.view.tab')}</button>
+        <button class:active={view === 'score'} onclick={() => setView('score')}>{t('player.view.score')}</button>
       </div>
-      <div class="seg" role="group" aria-label="Розкладка">
-        <button class:active={layout === 'page'} onclick={() => setLayout('page')}>Сторінка</button>
-        <button class:active={layout === 'horizontal'} onclick={() => setLayout('horizontal')}>Стрічка</button>
+      <div class="seg" role="group" aria-label={t('player.layout')}>
+        <button class:active={layout === 'page'} onclick={() => setLayout('page')}>{t('player.layout.page')}</button>
+        <button class:active={layout === 'horizontal'} onclick={() => setLayout('horizontal')}>{t('player.layout.horizontal')}</button>
       </div>
     {/if}
   </div>
@@ -604,11 +607,11 @@
     <div class="tracks">
       {#each tracks as track, i (track.index)}
         <div class="track" class:current={i === activeTrack}>
-          <button class="track-name" onclick={() => selectTrack(i)} title="Показати доріжку">
-            {track.name || `Доріжка ${i + 1}`}
+          <button class="track-name" onclick={() => selectTrack(i)} title={t('player.showTrack')}>
+            {track.name || t('player.trackN', { n: i + 1 })}
           </button>
-          <button class:active={trackMute[i]} onclick={() => toggleMute(i)} disabled={isOrig} title={isOrig ? 'Недоступно з оригінальним записом' : 'Mute'}>M</button>
-          <button class:active={trackSolo[i]} onclick={() => toggleSolo(i)} disabled={isOrig} title={isOrig ? 'Недоступно з оригінальним записом' : 'Solo'}>S</button>
+          <button class:active={trackMute[i]} onclick={() => toggleMute(i)} disabled={isOrig} title={isOrig ? t('player.origOnly') : 'Mute'}>M</button>
+          <button class:active={trackSolo[i]} onclick={() => toggleSolo(i)} disabled={isOrig} title={isOrig ? t('player.origOnly') : 'Solo'}>S</button>
         </div>
       {/each}
     </div>
@@ -622,8 +625,8 @@
     <div class="at-host" bind:this={host}></div>
     {#if !hasScore}
       <div class="empty">
-        <p>Перетягни сюди файл Guitar Pro (.gp, .gp5, .gpx) або натисни «Відкрити».</p>
-        <p class="muted">Нічого не відправляється на сервер: файл лишається у браузері.</p>
+        <p>{t('player.dropHint')}</p>
+        <p class="muted">{t('player.privacy')}</p>
         <div class="recent">
           <RecentFiles onopen={(name, data) => openBytes(name, data, false)} refreshKey={recentKey} />
         </div>
@@ -660,8 +663,8 @@
   {/if}
 
   <div class="transport">
-    <button onclick={stop} disabled={!hasScore} title="Стоп (Esc)">⏹</button>
-    <button class="primary play" onclick={playPause} disabled={!hasScore || !playerReady} title="Грати / пауза (пробіл)">
+    <button onclick={stop} disabled={!hasScore} title={t('player.stop')}>⏹</button>
+    <button class="primary play" onclick={playPause} disabled={!hasScore || !playerReady} title={t('player.playPause')}>
       {playing ? '⏸' : '▶'}
     </button>
     <span class="time">{fmt(currentTime)} / {fmt(endTime)}</span>
@@ -679,29 +682,30 @@
       />
     </label>
 
-    <button class:active={looping} onclick={toggleLoop} disabled={!hasScore} title="Зациклити (L)">Loop</button>
+    <button class:active={looping} onclick={toggleLoop} disabled={!hasScore} title={t('player.loop')}>Loop</button>
     {#if hasRange}
-      <button onclick={clearRange} title="Зняти виділення фрагменту">✕ фрагмент</button>
+      <button onclick={clearRange} title={t('player.clearRange')}>{t('player.clearRangeBtn')}</button>
     {/if}
-    <button class:active={metronome} onclick={toggleMetronome} disabled={!hasScore || isOrig} title={isOrig ? 'Недоступно з оригінальним записом' : 'Клік метронома'}>Клік</button>
-    <button class:active={countIn} onclick={toggleCountIn} disabled={!hasScore || isOrig} title={isOrig ? 'Недоступно з оригінальним записом' : 'Відлік перед стартом'}>1-2-3-4</button>
+    <button class:active={metronome} onclick={toggleMetronome} disabled={!hasScore || isOrig} title={isOrig ? t('player.origOnly') : t('player.clickTitle')}>{t('player.click')}</button>
+    <button class:active={countIn} onclick={toggleCountIn} disabled={!hasScore || isOrig} title={isOrig ? t('player.origOnly') : t('player.countInTitle')}>1-2-3-4</button>
     <button
       class="backing-btn"
       class:active={showBacking || isOrig}
       onclick={() => (showBacking = !showBacking)}
       disabled={!hasScore}
-      title="Бектрек з YouTube (B)"
+      title={t('player.backingTitle')}
     >
-      {#if isOrig}▶ ORIG{:else if videoId}Бектрек{:else if ytSearching}Бектрек…{:else if ytResults.length > 0}Бектрек <span class="dot" aria-label="знайдено"></span>{:else}Бектрек{/if}
+      {#if isOrig}▶ ORIG{:else if ytSearching && !videoId}{t('player.backing')}…{:else}{t('player.backing')}{#if !videoId && ytResults.length > 0}
+          <span class="dot" aria-label={t('player.found')}></span>{/if}{/if}
     </button>
 
     <span class="status muted">
       {#if rendering}
-        рендер…
+        {t('player.rendering')}
       {:else if !playerReady && soundFontProgress > 0 && soundFontProgress < 1}
-        звук {Math.round(soundFontProgress * 100)}%
+        {t('player.sound', { p: Math.round(soundFontProgress * 100) })}
       {:else if !playerReady && hasScore}
-        завантаження звуку…
+        {t('player.loadingSound')}
       {/if}
     </span>
   </div>

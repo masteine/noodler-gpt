@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
-  import { PitchTracker } from './mic'
+  import { MicError, PitchTracker } from './mic'
   import { frequencyToNote, midiToParts, noteToFrequency } from './pitch'
   import type { PitchReading } from './smoother'
   import { ReferenceTone } from './reference-tone'
   import { TUNINGS, nearestString, type Tuning } from './tunings'
+  import { t, type Key } from '../i18n/index.svelte'
 
   let { tabTuning = null }: { tabTuning?: { name: string; midi: number[] } | null } = $props()
 
@@ -47,7 +48,8 @@
 
   let listening = $state(false)
   let starting = $state(false)
-  let error = $state<string | null>(null)
+  /** Ключ повідомлення, а не готовий текст: при зміні мови помилка перекладається. */
+  let error = $state<{ key: Key; detail?: string } | null>(null)
   let reading = $state<PitchReading | null>(null)
 
   let a4 = $state(loadA4())
@@ -80,7 +82,7 @@
     view ? `${view.cents > 0 ? '+' : ''}${Math.round(view.cents)} ¢` : '',
   )
   const status = $derived(
-    !view ? '' : inTune ? 'У строї' : view.cents < 0 ? 'Занизько: підтягніть' : 'Зависоко: послабте',
+    !view ? '' : inTune ? t('tuner.inTune') : view.cents < 0 ? t('tuner.low') : t('tuner.high'),
   )
 
   /** Що грає кнопка «Еталон»: обрана струна строю або A4. */
@@ -102,7 +104,7 @@
   tracker.onEnded = () => {
     listening = false
     reading = null
-    error = 'Мікрофон відключився. Увімкніть його знову.'
+    error = { key: 'mic.ended' }
   }
   tone.onEnd = () => {
     toneOn = false
@@ -122,7 +124,9 @@
       await tracker.start()
       listening = tracker.active
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Не вдалося увімкнути мікрофон.'
+      if (e instanceof MicError && e.code !== 'unknown') error = { key: `mic.${e.code}` }
+      else if (e instanceof Error && e.message) error = { key: 'mic.unknownDetail', detail: e.message }
+      else error = { key: 'mic.unknown' }
     } finally {
       starting = false
     }
@@ -162,6 +166,10 @@
     }
   }
 
+  /** Пресети з перекладною назвою (басові); решта — загальноприйняті англійські назви строїв. */
+  const tuningNames: Record<string, Key> = { bass4: 'tuner.bass4', bass5: 'tuner.bass5' }
+  const tuningName = (x: Tuning) => (tuningNames[x.id] ? t(tuningNames[x.id]) : x.name)
+
   function pickString(i: number) {
     if (!tuning) return
     const same = selected === i
@@ -174,16 +182,16 @@
 <div class="tuner">
   <div class="top">
     {#if listening}
-      <button class="mic" onclick={stopMic}>Вимкнути мікрофон</button>
+      <button class="mic" onclick={stopMic}>{t('tuner.micOff')}</button>
     {:else}
       <button class="primary mic" onclick={startMic} disabled={starting}>
-        {starting ? 'Очікуємо дозвіл…' : 'Увімкнути мікрофон'}
+        {starting ? t('tuner.waiting') : t('tuner.micOn')}
       </button>
     {/if}
   </div>
 
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="error" role="alert">{t(error.key, { detail: error.detail ?? '' })}</p>
   {/if}
 
   <div class="readout" class:ok={inTune} class:held={reading?.held}>
@@ -195,7 +203,7 @@
       {/if}
     </div>
     <div class="freq">
-      {reading ? reading.frequency.toFixed(1) : '—'} <span class="unit">Гц</span>
+      {reading ? reading.frequency.toFixed(1) : '—'} <span class="unit">{t('tuner.hz')}</span>
     </div>
   </div>
 
@@ -205,7 +213,7 @@
       class:ok={inTune}
       class:held={reading?.held}
       role="meter"
-      aria-label="Відхилення в центах"
+      aria-label={t('tuner.centsAria')}
       aria-valuemin={-50}
       aria-valuemax={50}
       aria-valuenow={view ? Math.round(gaugePos - 50) : 0}
@@ -227,26 +235,26 @@
 
   <div class="mode">
     <label>
-      <span>Режим</span>
+      <span>{t('tuner.mode')}</span>
       <select value={tuningId} onchange={(e) => resetTuning((e.currentTarget as HTMLSelectElement).value)}>
-        <option value="chromatic">Хроматичний</option>
-        {#each TUNINGS as t (t.id)}
-          <option value={t.id}>{t.name}</option>
+        <option value="chromatic">{t('tuner.chromatic')}</option>
+        {#each TUNINGS as preset (preset.id)}
+          <option value={preset.id}>{tuningName(preset)}</option>
         {/each}
         {#if tabCopy}
-          <option value="tab">Із табу: {tabCopy.name}</option>
+          <option value="tab">{t('tuner.fromTab', { name: tabCopy.name })}</option>
         {/if}
       </select>
     </label>
     {#if tabTuning}
-      <button onclick={useTabTuning} title="Стрій активної доріжки табу">
-        Взяти стрій із табу ({tabTuning.name})
+      <button onclick={useTabTuning} title={t('tuner.tabTuningTitle')}>
+        {t('tuner.useTabTuning', { name: tabTuning.name })}
       </button>
     {/if}
   </div>
 
   {#if tuning}
-    <div class="strings" role="group" aria-label="Струни строю">
+    <div class="strings" role="group" aria-label={t('tuner.stringsAria')}>
       {#each tuning.midi as m, i (i)}
         {@const p = midiToParts(m)}
         <button
@@ -255,8 +263,8 @@
           class:hit={view?.stringIndex === i && !reading?.held}
           class:active={selected === i}
           onclick={() => pickString(i)}
-          aria-label="Струна {p.name}{p.octave}{tuned[i] ? ', у строї' : ''}"
-          title="Натисніть, щоб почути струну"
+          aria-label={t(tuned[i] ? 'tuner.stringInTune' : 'tuner.stringAria', { note: `${p.name}${p.octave}` })}
+          title={t('tuner.stringTitle')}
         >
           {p.name}<sub>{p.octave}</sub>
         </button>
@@ -266,33 +274,33 @@
 
   <div class="extras">
     <button onclick={() => playTone(refTarget.freq)} class:active={toneOn}>
-      {toneOn ? '■ Стоп' : '▶ Еталон'}
-      {refTarget.label} · {refTarget.freq.toFixed(1)} Гц
+      {toneOn ? t('tuner.stop') : t('tuner.reference')}
+      {refTarget.label} · {refTarget.freq.toFixed(1)} {t('tuner.hz')}
     </button>
 
     <div class="calib">
       <span class="calib-label">A4</span>
-      <button class="step" onclick={() => setA4(a4 - 1)} aria-label="A4 нижче" disabled={a4 <= A4_MIN}>−</button>
+      <button class="step" onclick={() => setA4(a4 - 1)} aria-label={t('tuner.a4Lower')} disabled={a4 <= A4_MIN}>−</button>
       <input
         type="range"
         min={A4_MIN}
         max={A4_MAX}
         step="1"
         value={a4}
-        aria-label="Калібрування A4, Гц"
+        aria-label={t('tuner.a4Aria')}
         oninput={(e) => setA4(Number((e.currentTarget as HTMLInputElement).value))}
       />
-      <button class="step" onclick={() => setA4(a4 + 1)} aria-label="A4 вище" disabled={a4 >= A4_MAX}>+</button>
-      <span class="calib-value">{a4} Гц</span>
+      <button class="step" onclick={() => setA4(a4 + 1)} aria-label={t('tuner.a4Higher')} disabled={a4 >= A4_MAX}>+</button>
+      <span class="calib-value">{a4} {t('tuner.hz')}</span>
       <button onclick={() => setA4(440)} disabled={a4 === 440}>440</button>
     </div>
   </div>
 
   <p class="hint">
     {#if listening}
-      Грайте струни по одній і дайте їм дзвеніти. Зелений колір: відхилення не більше {IN_TUNE_CENTS} центів.
+      {t('tuner.hintListening', { cents: IN_TUNE_CENTS })}
     {:else}
-      Мікрофон вмикається лише за вашим натисканням; звук не записується й нікуди не надсилається.
+      {t('tuner.hintIdle')}
     {/if}
   </p>
 </div>

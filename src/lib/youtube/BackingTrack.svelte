@@ -7,6 +7,7 @@
   import { getApiKey, setApiKey } from './settings'
   import { formatMs, parseMs } from './sync'
   import type { Source } from './handler'
+  import { t } from '../i18n/index.svelte'
 
   interface Props {
     videoId: string | null
@@ -127,7 +128,7 @@
     e.preventDefault()
     const id = parseVideoId(link)
     if (!id) {
-      linkError = 'Не схоже на посилання YouTube'
+      linkError = t('bt.badLink')
       return
     }
     linkError = null
@@ -204,26 +205,26 @@
   class:collapsed
   style:transform={`translate(${dx}px, ${dy}px)`}
   role="dialog"
-  aria-label="Бектрек з YouTube"
+  aria-label={t('bt.aria')}
 >
-  <div class="head" role="toolbar" tabindex="-1" aria-label="Керування бектреком" onpointerdown={startDrag}>
+  <div class="head" role="toolbar" tabindex="-1" aria-label={t('bt.controls')} onpointerdown={startDrag}>
     <span class="grip" aria-hidden="true">⋮⋮</span>
-    <span class="title">Бектрек</span>
-    <div class="seg" role="group" aria-label="Джерело звуку">
+    <span class="title">{t('bt.title')}</span>
+    <div class="seg" role="group" aria-label={t('bt.source')}>
       <button
         class:active={source === 'youtube'}
         disabled={!canSwitch}
         onclick={() => onsource('youtube')}
-        title={canSwitch ? 'Оригінальний запис з YouTube' : 'Спочатку виберіть відео'}
+        title={canSwitch ? t('bt.origTitle') : t('bt.pickFirst')}
       >
         ORIG
       </button>
-      <button class:active={source === 'synth'} onclick={() => onsource('synth')} title="Синтезатор">SYNTH</button>
+      <button class:active={source === 'synth'} onclick={() => onsource('synth')} title={t('bt.synth')}>SYNTH</button>
     </div>
-    <button class="icon" onclick={() => (collapsed = !collapsed)} title={collapsed ? 'Розгорнути' : 'Згорнути'}>
+    <button class="icon" onclick={() => (collapsed = !collapsed)} title={collapsed ? t('bt.expand') : t('bt.collapse')}>
       {collapsed ? '▴' : '▾'}
     </button>
-    <button class="icon" onclick={onclose} title="Сховати (B)">✕</button>
+    <button class="icon" onclick={onclose} title={t('bt.hide')}>✕</button>
   </div>
 
   {#if videoId}
@@ -232,7 +233,7 @@
         <div class="host" bind:this={videoHost}></div>
       {/key}
       {#if loadingPlayer}
-        <div class="overlay muted">завантаження плеєра…</div>
+        <div class="overlay muted">{t('bt.loadingPlayer')}</div>
       {/if}
     </div>
     {#if playerError}
@@ -244,8 +245,8 @@
     {#if videoId && !changeVideo}
       <div class="sync">
         <div class="row">
-          <span class="label">Початок</span>
-          <button class="small" onclick={() => nudge(-100)} title="−0,1 с">−</button>
+          <span class="label">{t('bt.start')}</span>
+          <button class="small" onclick={() => nudge(-100)} title={t('bt.minus')}>−</button>
           <input
             class="offset"
             type="text"
@@ -253,52 +254,49 @@
             bind:value={offsetText}
             onchange={commitOffset}
             onkeydown={(e) => e.key === 'Enter' && commitOffset()}
-            aria-label="Зсув початку пісні у відео (хв:с)"
+            aria-label={t('bt.offsetAria')}
           />
-          <button class="small" onclick={() => nudge(100)} title="+0,1 с">+</button>
-          <button class="small" onclick={onoffsetnow} disabled={!canSwitch} title="Такт 1 починається зараз">Зараз</button>
+          <button class="small" onclick={() => nudge(100)} title={t('bt.plus')}>+</button>
+          <button class="small" onclick={onoffsetnow} disabled={!canSwitch} title={t('bt.nowTitle')}>{t('bt.now')}</button>
         </div>
         <div class="row">
-          <button class="small" onclick={ontap} disabled={!canTap} title="Натисни на першій долі такту під час гри (M)">
-            Мітка (M){#if taps > 0}<span class="badge">{taps}</span>{/if}
+          <button class="small" onclick={ontap} disabled={!canTap} title={t('bt.tapTitle')}>
+            {t('bt.tap')}{#if taps > 0}<span class="badge">{taps}</span>{/if}
           </button>
-          <button class="small" onclick={onresetsync} disabled={offsetMs === 0 && taps === 0}>Скинути</button>
+          <button class="small" onclick={onresetsync} disabled={offsetMs === 0 && taps === 0}>{t('bt.reset')}</button>
           <span class="spacer"></span>
-          <button class="small" onclick={() => (changeVideo = true)}>Інше відео</button>
-          <button class="small" onclick={onunlink} title="Прибрати відео й повернутись до синтезатора">Відв’язати</button>
+          <button class="small" onclick={() => (changeVideo = true)}>{t('bt.otherVideo')}</button>
+          <button class="small" onclick={onunlink} title={t('bt.unlinkTitle')}>{t('bt.unlink')}</button>
         </div>
-        <p class="hint muted">
-          Якщо курсор відстає або випереджає: постав «Початок» на першу ноту, а далі під час гри натискай M на першій долі
-          такту — темп між мітками вирівняється.
-        </p>
+        <p class="hint muted">{t('bt.syncHint')}</p>
       </div>
     {/if}
 
     {#if showSearch}
       <div class="search">
         <form class="row" onsubmit={submitSearch}>
-          <input type="search" bind:value={q} placeholder="Виконавець — назва" aria-label="Пошук на YouTube" />
+          <input type="search" bind:value={q} placeholder={t('bt.searchPlaceholder')} aria-label={t('bt.searchAria')} />
           <button class="small primary" type="submit" disabled={searching || !q.trim()}>
-            {searching ? '…' : 'Шукати'}
+            {searching ? '…' : t('bt.search')}
           </button>
           {#if changeVideo}
-            <button class="small" type="button" onclick={() => (changeVideo = false)}>Назад</button>
+            <button class="small" type="button" onclick={() => (changeVideo = false)}>{t('bt.back')}</button>
           {/if}
         </form>
 
         {#if searchUnavailable}
           <div class="unavailable">
-            <p class="muted">Автопошук недоступний: відкрий YouTube і встав посилання на відео нижче.</p>
+            <p class="muted">{t('bt.unavailable')}</p>
             <a class="button-like" href={youtubeSearchUrl(q)} target="_blank" rel="noopener noreferrer">
-              Відкрити YouTube ↗
+              {t('bt.openYoutube')}
             </a>
             <details>
-              <summary class="muted">Свій ключ YouTube Data API</summary>
+              <summary class="muted">{t('bt.ownKey')}</summary>
               <div class="row">
-                <input type="password" bind:value={apiKey} placeholder="AIza…" aria-label="API-ключ" autocomplete="off" />
-                <button class="small" type="button" onclick={saveKey}>Зберегти</button>
+                <input type="password" bind:value={apiKey} placeholder="AIza…" aria-label={t('bt.apiKeyAria')} autocomplete="off" />
+                <button class="small" type="button" onclick={saveKey}>{t('bt.save')}</button>
               </div>
-              <p class="hint muted">Ключ зберігається лише в цьому браузері й використовується для пошуку напряму в Google.</p>
+              <p class="hint muted">{t('bt.keyHint')}</p>
             </details>
           </div>
         {:else if searchError}
@@ -309,7 +307,7 @@
           <ul class="results">
             {#each results as r (r.videoId)}
               <li>
-                <button class="result" onclick={() => pick(r.videoId)} title="Використати як бектрек">
+                <button class="result" onclick={() => pick(r.videoId)} title={t('bt.useAsBacking')}>
                   {#if r.thumbnail}<img src={r.thumbnail} alt="" loading="lazy" />{/if}
                   <span class="meta">
                     <span class="rtitle">{r.title}</span>
@@ -322,7 +320,7 @@
         {/if}
 
         <form class="row" onsubmit={submitLink}>
-          <input type="url" bind:value={link} placeholder="або встав посилання на відео" aria-label="Посилання YouTube" />
+          <input type="url" bind:value={link} placeholder={t('bt.linkPlaceholder')} aria-label={t('bt.linkAria')} />
           <button class="small" type="submit" disabled={!link.trim()}>OK</button>
         </form>
         {#if linkError}

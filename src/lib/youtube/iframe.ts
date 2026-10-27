@@ -1,6 +1,8 @@
 // Завантаження YouTube IFrame Player API. Скрипт підключаємо лише раз і лише тоді,
 // коли користувач справді хоче відео, щоб не тягнути Google-скрипти на кожне відкриття файлу.
 
+import { t } from '../i18n/index.svelte'
+
 const API_SRC = 'https://www.youtube.com/iframe_api'
 /** Домен без рекламних cookie: YouTube не ставить трекінгові cookie, поки відео не запущено. */
 const PLAYER_HOST = 'https://www.youtube-nocookie.com'
@@ -19,7 +21,7 @@ export function loadIframeApi(): Promise<typeof YT> {
     window.onYouTubeIframeAPIReady = () => {
       previous?.()
       if (window.YT) resolve(window.YT)
-      else reject(new Error('YouTube IFrame API не ініціалізувався'))
+      else reject(new Error(t('yt.apiInit')))
     }
     const script = document.createElement('script')
     script.src = API_SRC
@@ -27,7 +29,7 @@ export function loadIframeApi(): Promise<typeof YT> {
     script.onerror = () => {
       apiPromise = null
       script.remove()
-      reject(new Error('Не вдалося завантажити YouTube IFrame API (немає мережі або заблоковано)'))
+      reject(new Error(t('yt.apiLoad')))
     }
     document.head.appendChild(script)
   })
@@ -77,15 +79,15 @@ export async function createPlayer(host: HTMLElement, videoId: string, events: P
 export function describeError(code: number): string {
   switch (code) {
     case 2:
-      return 'Некоректний ідентифікатор відео'
+      return t('yt.badId')
     case 5:
-      return 'Відео не відтворюється в HTML5-плеєрі'
+      return t('yt.html5')
     case 100:
-      return 'Відео не знайдено або воно приватне'
+      return t('yt.notFound')
     case 101:
     case 150:
-      return 'Автор заборонив вбудовувати це відео'
+      return t('yt.noEmbed')
     default:
-      return `Помилка YouTube (${code})`
+      return t('yt.error', { code })
   }
 }

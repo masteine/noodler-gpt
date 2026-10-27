@@ -3,6 +3,7 @@
   import { getAudioContext } from '../audio'
   import { session } from '../session.svelte'
   import { Metronome, TapTempo, BPM_MIN, BPM_MAX, type BeatEvent } from './metronome'
+  import { t, type Key } from '../i18n/index.svelte'
 
   const signatures = [
     { n: 2, d: 4 },
@@ -13,11 +14,11 @@
     { n: 7, d: 8 },
     { n: 12, d: 8 },
   ]
-  const subdivisions = [
-    { v: 1, label: 'Долі' },
-    { v: 2, label: 'Восьмі' },
-    { v: 3, label: 'Тріолі' },
-    { v: 4, label: '16-ті' },
+  const subdivisions: { v: number; label: Key }[] = [
+    { v: 1, label: 'metro.sub.1' },
+    { v: 2, label: 'metro.sub.2' },
+    { v: 3, label: 'metro.sub.3' },
+    { v: 4, label: 'metro.sub.4' },
   ]
 
   // $state.raw: ефект нижче має перезапуститися, коли onMount створить метроном.
@@ -151,7 +152,7 @@
     min={BPM_MIN}
     max={BPM_MAX}
     value={bpm}
-    aria-label="Темп"
+    aria-label={t('metro.tempo')}
     oninput={(e) => setBpm(Number((e.currentTarget as HTMLInputElement).value))}
   />
 
@@ -162,20 +163,20 @@
   </div>
 
   <div class="actions">
-    <button class="primary start" onclick={toggle}>{running ? '⏸ Стоп' : '▶ Старт'}</button>
-    <button class="tap" onclick={tap} title="Клавіша T">Tap</button>
+    <button class="primary start" onclick={toggle}>{running ? t('metro.stop') : t('metro.start')}</button>
+    <button class="tap" onclick={tap} title={t('metro.tapTitle')}>Tap</button>
     <button onclick={useTabTempo} disabled={tabBpm === null} title={session.tabTitle}>
       {#if tabBpm === null}
-        Темп із табу
+        {t('metro.tabTempo')}
       {:else}
-        Взяти темп із табу ({tabBpm})
+        {t('metro.useTabTempo', { bpm: tabBpm })}
       {/if}
     </button>
   </div>
 
   <div class="options">
     <label>
-      <span>Розмір</span>
+      <span>{t('metro.signature')}</span>
       <select bind:value={sigIndex}>
         {#each signatures as s, i (i)}
           <option value={i}>{s.n}/{s.d}</option>
@@ -183,24 +184,24 @@
       </select>
     </label>
 
-    <div class="seg" role="group" aria-label="Підрозділи">
+    <div class="seg" role="group" aria-label={t('metro.subdivisions')}>
       {#each subdivisions as s (s.v)}
-        <button class:active={subdivision === s.v} aria-pressed={subdivision === s.v} onclick={() => (subdivision = s.v)}>{s.label}</button>
+        <button class:active={subdivision === s.v} aria-pressed={subdivision === s.v} onclick={() => (subdivision = s.v)}>{t(s.label)}</button>
       {/each}
     </div>
 
     <label class="check">
       <input type="checkbox" bind:checked={accent} />
-      <span>Акцент на першу долю</span>
+      <span>{t('metro.accent')}</span>
     </label>
 
     <label class="vol">
-      <span>Гучність</span>
+      <span>{t('metro.volume')}</span>
       <input type="range" min="0" max="100" bind:value={volume} />
     </label>
   </div>
 
-  <p class="hint muted">Пробіл — старт/стоп · ↑ ↓ — темп (Shift ±5) · T — tap</p>
+  <p class="hint muted">{t('metro.hint')}</p>
 </div>
 
 <style>

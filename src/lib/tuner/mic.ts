@@ -15,9 +15,10 @@ const INTERVAL_MS = 33
 
 export type MicErrorCode = 'insecure' | 'unsupported' | 'denied' | 'no-device' | 'busy' | 'unknown'
 
+/** Текст для користувача складає UI за кодом (мовою інтерфейсу); message — технічна деталь. */
 export class MicError extends Error {
   code: MicErrorCode
-  constructor(code: MicErrorCode, message: string) {
+  constructor(code: MicErrorCode, message: string = code) {
     super(message)
     this.name = 'MicError'
     this.code = code
@@ -30,23 +31,17 @@ function toMicError(e: unknown): MicError {
     case 'NotAllowedError':
     case 'SecurityError':
     case 'PermissionDeniedError':
-      return new MicError(
-        'denied',
-        'Доступ до мікрофона заборонено. Дозвольте його в налаштуваннях сайту (значок біля адреси) і спробуйте ще раз.',
-      )
+      return new MicError('denied')
     case 'NotFoundError':
     case 'DevicesNotFoundError':
     case 'OverconstrainedError':
-      return new MicError('no-device', 'Мікрофон не знайдено. Підключіть пристрій і спробуйте ще раз.')
+      return new MicError('no-device')
     case 'NotReadableError':
     case 'TrackStartError':
     case 'AbortError':
-      return new MicError('busy', 'Мікрофон недоступний: його, схоже, використовує інша програма або вкладка.')
+      return new MicError('busy')
     default:
-      return new MicError(
-        'unknown',
-        `Не вдалося увімкнути мікрофон${e instanceof Error && e.message ? `: ${e.message}` : '.'}`,
-      )
+      return new MicError('unknown', e instanceof Error ? e.message : '')
   }
 }
 
@@ -75,13 +70,10 @@ export class PitchTracker {
   async start(): Promise<void> {
     if (this.running) return
     if (typeof window === 'undefined' || !window.isSecureContext) {
-      throw new MicError(
-        'insecure',
-        'Мікрофон працює лише через HTTPS (або на localhost). Відкрийте застосунок за адресою https://…',
-      )
+      throw new MicError('insecure')
     }
     if (!navigator.mediaDevices?.getUserMedia) {
-      throw new MicError('unsupported', 'Цей браузер не дає доступу до мікрофона.')
+      throw new MicError('unsupported')
     }
 
     const token = ++this.startToken

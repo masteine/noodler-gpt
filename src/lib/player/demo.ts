@@ -1,10 +1,11 @@
 // Вбудований демо-риф у форматі alphaTex, щоб перевірити плеєр без файлу.
-export const demoTex = `
-\\title "Демо-риф"
+// Назви передаються ззовні, щоб демо відкривалось мовою інтерфейсу.
+export const demoTex = (names: { title: string; guitar: string; bass: string }) => `
+\\title "${names.title}"
 \\subtitle "Noodler"
 \\tempo 110
 .
-\\track "Гітара" "Gtr"
+\\track "${names.guitar}" "Gtr"
 \\instrument 30
 \\tuning e5 b4 g4 d4 a3 e3
 :8 0.6 0.6 3.6 0.6 5.6 0.6 3.6 0.6 |
@@ -15,7 +16,7 @@ export const demoTex = `
 0.6 0.6 3.6 0.6 5.6 0.6 3.6 0.6 |
 :2 (0.5 2.4 2.3) (3.5 5.4 5.3) |
 :1 (0.6 2.5 2.4) |
-\\track "Бас" "Bass"
+\\track "${names.bass}" "Bass"
 \\instrument 33
 \\tuning g2 d2 a1 e1
 :4 0.4 0.4 3.4 5.4 | 0.4 0.4 3.4 5.4 |

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { listRecent, loadRecent, removeRecent, clearRecent, type RecentEntry } from './recent'
+  import { i18n, t } from '../i18n/index.svelte'
 
   interface Props {
     onopen: (name: string, data: Uint8Array) => void
@@ -62,25 +63,25 @@
   }
 
   function fmtSize(bytes: number): string {
-    return `${Math.max(1, Math.round(bytes / 1024))} КБ`
+    return t('recent.kb', { n: Math.max(1, Math.round(bytes / 1024)) })
   }
 
-  const rtf = new Intl.RelativeTimeFormat('uk', { numeric: 'auto' })
+  const rtf = $derived(new Intl.RelativeTimeFormat(i18n.locale, { numeric: 'auto' }))
 
   function fmtAgo(ts: number, ref: number): string {
     const sec = Math.round((ts - ref) / 1000)
     const abs = Math.abs(sec)
-    if (abs < 60) return 'щойно'
+    if (abs < 60) return t('recent.justNow')
     if (abs < 3600) return rtf.format(Math.round(sec / 60), 'minute')
     if (abs < 86400) return rtf.format(Math.round(sec / 3600), 'hour')
     if (abs < 86400 * 30) return rtf.format(Math.round(sec / 86400), 'day')
-    return new Date(ts).toLocaleDateString('uk')
+    return new Date(ts).toLocaleDateString(i18n.locale)
   }
 </script>
 
 {#snippet list()}
   {#if items.length === 0}
-    <p class="none muted">{loaded ? 'Нещодавніх файлів ще немає.' : 'Завантаження…'}</p>
+    <p class="none muted">{loaded ? t('recent.none') : t('recent.loading')}</p>
   {:else}
     <ul>
       {#each items as item (item.id)}
@@ -89,22 +90,22 @@
             <span class="name">{item.name}</span>
             <span class="meta muted">{fmtSize(item.size)} · {fmtAgo(item.openedAt, now)}</span>
           </button>
-          <button class="del" onclick={() => remove(item)} title="Видалити зі списку" aria-label="Видалити «{item.name}» зі списку">✕</button>
+          <button class="del" onclick={() => remove(item)} title={t('recent.remove')} aria-label={t('recent.removeAria', { name: item.name })}>✕</button>
         </li>
       {/each}
     </ul>
-    <button class="clear" onclick={clearAll}>Очистити все</button>
+    <button class="clear" onclick={clearAll}>{t('recent.clear')}</button>
   {/if}
 {/snippet}
 
 {#if compact}
   <details class="recent compact" bind:this={menu}>
-    <summary>Нещодавні{items.length ? ` (${items.length})` : ''}</summary>
+    <summary>{t('recent.title')}{items.length ? ` (${items.length})` : ''}</summary>
     <div class="panel">{@render list()}</div>
   </details>
 {:else}
   <section class="recent">
-    <h3>Нещодавні</h3>
+    <h3>{t('recent.title')}</h3>
     {@render list()}
   </section>
 {/if}

@@ -13,6 +13,16 @@ export interface YtResult {
 /** Немає ні серверного ендпойнта, ні ключа користувача. */
 export class SearchUnavailableError extends Error {}
 
+/** Пошук не вдався. status — HTTP-код прямого запиту до Google; null — збій серверного ендпойнта.
+ *  Текст для користувача складає UI мовою інтерфейсу. */
+export class SearchFailedError extends Error {
+  status: number | null
+  constructor(status: number | null) {
+    super(status === null ? 'search service unavailable' : `YouTube search failed (HTTP ${status})`)
+    this.status = status
+  }
+}
+
 const SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search'
 const VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos'
 
@@ -122,7 +132,7 @@ async function searchDirect(query: string, apiKey: string, f: typeof fetch, sign
     key: apiKey,
   })
   const sRes = await f(`${SEARCH_URL}?${sp}`, { signal })
-  if (!sRes.ok) throw new Error(`Пошук YouTube не вдався (HTTP ${sRes.status}). Перевірте API-ключ.`)
+  if (!sRes.ok) throw new SearchFailedError(sRes.status)
   const sJson: unknown = await sRes.json()
 
   const ids = (mapSearchResponse(sJson, null)).map((r) => r.videoId)
@@ -158,6 +168,6 @@ export async function searchYouTube(query: string, opts: SearchOptions = {}): Pr
   }
 
   if (apiKey) return searchDirect(query, apiKey, f, signal)
-  if (status === 0 || status === 404 || status === 200) throw new SearchUnavailableError('Пошук YouTube недоступний: немає серверного ендпойнта та API-ключа.')
-  throw new Error('Сервіс пошуку тимчасово недоступний. Спробуйте пізніше.')
+  if (status === 0 || status === 404 || status === 200) throw new SearchUnavailableError('no search endpoint and no API key')
+  throw new SearchFailedError(null)
 }
