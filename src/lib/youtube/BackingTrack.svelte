@@ -1,12 +1,15 @@
 <script lang="ts">
-  // Плаваюче міні-вікно бектреку: відео YouTube, перемикач ORIG / SYNTH, пошук, посилання,
+  // Вікно бектреку: відео YouTube, перемикач запис / синтезатор, пошук, посилання,
   // зсув і мітки синхронізації. Про alphaTab нічого не знає: усе робить через колбеки.
+  // Десктоп — плаваюча панель, яку можна тягати; телефон — нижній аркуш, що згортається в міні-плеєр.
+  import { onMount } from 'svelte'
   import { createPlayer, describeError } from './iframe'
   import { parseVideoId } from './parse'
   import { youtubeSearchUrl, type YtResult } from './search'
   import { getApiKey, setApiKey } from './settings'
   import { formatMs, parseMs } from './sync'
   import type { Source } from './handler'
+  import Icon from '../ui/Icon.svelte'
   import { t } from '../i18n/index.svelte'
 
   interface Props {
@@ -69,6 +72,8 @@
   let videoHost = $state<HTMLDivElement>()
   let playerError = $state<string | null>(null)
   let loadingPlayer = $state(false)
+  let ytPlayer: YT.Player | null = null
+  let volume = $state(100)
 
   // YT.Player підміняє переданий елемент на iframe, тому host обгорнуто в {#key videoId}:
   // на нове відео Svelte створює свіжий елемент, а ефект нижче — новий плеєр.
@@ -91,6 +96,8 @@
           return
         }
         player = p
+        ytPlayer = p
+        p.setVolume(volume)
         loadingPlayer = false
         onplayer(p)
       })
@@ -105,6 +112,7 @@
         onplayer(null)
         player.destroy()
         player = null
+        ytPlayer = null
       }
     }
   })
@@ -166,13 +174,27 @@
     onoffset(Math.max(0, offsetMs + deltaMs))
   }
 
+  function setVolume(v: number) {
+    volume = v
+    ytPlayer?.setVolume(v)
+  }
+
   // --- вікно: згортання і перетягування ---
   let collapsed = $state(false)
   let dx = $state(0)
   let dy = $state(0)
+  let mobile = $state(false)
+
+  onMount(() => {
+    const mq = matchMedia('(max-width: 720px)')
+    mobile = mq.matches
+    const onChange = (e: MediaQueryListEvent) => (mobile = e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  })
 
   function startDrag(e: PointerEvent) {
-    if ((e.target as HTMLElement).closest('button, input, a, select')) return
+    if (mobile || (e.target as HTMLElement).closest('button, input, a, select')) return
     const el = e.currentTarget as HTMLElement
     const sx = e.clientX - dx
     const sy = e.clientY - dy
@@ -200,31 +222,40 @@
   const showSearch = $derived(!videoId || changeVideo)
 </script>
 
+
+{#if mobile && !collapsed}
+  <div class="backdrop" role="presentation" onclick={() => (collapsed = true)}></div>
+{/if}
+
 <div
   class="backing"
   class:collapsed
-  style:transform={`translate(${dx}px, ${dy}px)`}
+  class:mobile
+  style:transform={mobile ? undefined : `translate(${dx}px, ${dy}px)`}
   role="dialog"
   aria-label={t('bt.aria')}
 >
   <div class="head" role="toolbar" tabindex="-1" aria-label={t('bt.controls')} onpointerdown={startDrag}>
-    <span class="grip" aria-hidden="true">⋮⋮</span>
-    <span class="title">{t('bt.title')}</span>
-    <div class="seg" role="group" aria-label={t('bt.source')}>
-      <button
-        class:active={source === 'youtube'}
-        disabled={!canSwitch}
-        onclick={() => onsource('youtube')}
-        title={canSwitch ? t('bt.origTitle') : t('bt.pickFirst')}
-      >
-        ORIG
-      </button>
-      <button class:active={source === 'synth'} onclick={() => onsource('synth')} title={t('bt.synth')}>SYNTH</button>
+    {#if mobile && !collapsed}
+      <span class="handle" aria-hidden="true"></span>
+    {/if}
+    <span class="grip" aria-hidden="true"><Icon name="grip" size={16} /></span>
+    <span class="head-icon" aria-hidden="true"><Icon name="headphones" size={mobile && !collapsed ? 20 : 18} /></span>
+    <div class="titles">
+      <h2>{t('bt.title')}</h2>
+      {#if mobile && !collapsed}<div class="sub">{t('bt.subtitle')}</div>{/if}
     </div>
-    <button class="icon" onclick={() => (collapsed = !collapsed)} title={collapsed ? t('bt.expand') : t('bt.collapse')}>
-      {collapsed ? '▴' : '▾'}
+    <button
+      class="hbtn"
+      onclick={() => (collapsed = !collapsed)}
+      aria-label={collapsed ? t('bt.expand') : t('bt.collapse')}
+      title={collapsed ? t('bt.expand') : t('bt.collapse')}
+    >
+      <Icon name={collapsed ? 'chevron-up' : 'chevron-down'} />
     </button>
-    <button class="icon" onclick={onclose} title={t('bt.hide')}>✕</button>
+    <button class="hbtn" onclick={onclose} aria-label={t('bt.hide')} title={t('bt.hide')}>
+      <Icon name="x" />
+    </button>
   </div>
 
   {#if videoId}
@@ -233,22 +264,114 @@
         <div class="host" bind:this={videoHost}></div>
       {/key}
       {#if loadingPlayer}
-        <div class="overlay muted">{t('bt.loadingPlayer')}</div>
+        <div class="overlay">{t('bt.loadingPlayer')}</div>
       {/if}
     </div>
     {#if playerError}
-      <div class="error">{playerError}</div>
+      <div class="error-box small">{playerError}</div>
     {/if}
   {/if}
 
   {#if !collapsed}
-    {#if videoId && !changeVideo}
-      <div class="sync">
+    <div class="content">
+      <div class="seg fill" role="group" aria-label={t('bt.source')}>
+        <button
+          aria-pressed={source === 'youtube'}
+          disabled={!canSwitch}
+          onclick={() => onsource('youtube')}
+          title={canSwitch ? t('bt.origTitle') : t('bt.pickFirst')}
+        >
+          {t('bt.sourceYoutube')}
+        </button>
+        <button aria-pressed={source === 'synth'} onclick={() => onsource('synth')} title={t('bt.synth')}>{t('bt.sourceSynth')}</button>
+      </div>
+
+      {#if showSearch}
+        <form class="row" onsubmit={submitSearch}>
+          <label class="field">
+            <Icon name="search" size={16} />
+            <span class="sr-only">{t('bt.searchAria')}</span>
+            <input type="search" bind:value={q} placeholder={t('bt.searchPlaceholder')} />
+          </label>
+          <button class="btn primary" type="submit" disabled={searching || !q.trim()}>
+            {searching ? '…' : t('bt.search')}
+          </button>
+        </form>
+        <form class="row tight" onsubmit={submitLink}>
+          <label class="field">
+            <Icon name="link" size={16} />
+            <span class="sr-only">{t('bt.linkAria')}</span>
+            <input type="url" bind:value={link} placeholder={t('bt.linkPlaceholder')} />
+          </label>
+          <button class="btn" type="submit" disabled={!link.trim()}>OK</button>
+        </form>
+        {#if linkError}
+          <div class="error-box small">{linkError}</div>
+        {/if}
+
+        {#if searchUnavailable}
+          <div class="unavailable">
+            <p>{t('bt.unavailable')}</p>
+            <a class="btn" href={youtubeSearchUrl(q)} target="_blank" rel="noopener noreferrer">{t('bt.openYoutube')}</a>
+            <details>
+              <summary>{t('bt.ownKey')}</summary>
+              <div class="row">
+                <label class="field">
+                  <span class="sr-only">{t('bt.apiKeyAria')}</span>
+                  <input type="password" bind:value={apiKey} placeholder="AIza…" autocomplete="off" />
+                </label>
+                <button class="btn" type="button" onclick={saveKey}>{t('bt.save')}</button>
+              </div>
+              <p class="hint">{t('bt.keyHint')}</p>
+            </details>
+          </div>
+        {:else if searchError}
+          <div class="error-box small">{searchError}</div>
+        {/if}
+
+        {#if results.length > 0}
+          <ul class="results">
+            {#each results as r (r.videoId)}
+              {@const chosen = r.videoId === videoId}
+              <li>
+                <button class="result" class:chosen aria-pressed={chosen} onclick={() => pick(r.videoId)} title={t('bt.useAsBacking')}>
+                  <span class="thumb">
+                    {#if r.thumbnail}<img src={r.thumbnail} alt="" loading="lazy" />{:else}<Icon name="play" />{/if}
+                  </span>
+                  <span class="meta">
+                    <span class="rtitle">{r.title}</span>
+                    <span class="rsub">{r.channel}{#if r.durationSec !== null} · {fmtDuration(r.durationSec)}{/if}</span>
+                  </span>
+                  {#if chosen}<span class="check"><Icon name="check" size={20} stroke={2.4} /></span>{/if}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if changeVideo}
+          <button class="btn back" type="button" onclick={() => (changeVideo = false)}>{t('bt.back')}</button>
+        {/if}
+      {:else}
         <div class="row">
-          <span class="label">{t('bt.start')}</span>
-          <button class="small" onclick={() => nudge(-100)} title={t('bt.minus')}>−</button>
+          <button class="btn" onclick={() => (changeVideo = true)}>
+            <Icon name="search" size={16} />
+            {t('bt.otherVideo')}
+          </button>
+          <button class="btn" onclick={onunlink} title={t('bt.unlinkTitle')}>{t('bt.unlink')}</button>
+        </div>
+      {/if}
+    </div>
+
+    {#if videoId && !changeVideo}
+      <div class="foot">
+        <div class="frow">
+          <span class="flabel">{t('bt.offset')}</span>
+          <button class="step" onclick={() => nudge(-100)} aria-label={t('bt.minus')} title={t('bt.minus')}>
+            <Icon name="minus" size={14} />
+          </button>
           <input
-            class="offset"
+            class="offset mono"
             type="text"
             inputmode="decimal"
             bind:value={offsetText}
@@ -256,76 +379,22 @@
             onkeydown={(e) => e.key === 'Enter' && commitOffset()}
             aria-label={t('bt.offsetAria')}
           />
-          <button class="small" onclick={() => nudge(100)} title={t('bt.plus')}>+</button>
-          <button class="small" onclick={onoffsetnow} disabled={!canSwitch} title={t('bt.nowTitle')}>{t('bt.now')}</button>
-        </div>
-        <div class="row">
-          <button class="small" onclick={ontap} disabled={!canTap} title={t('bt.tapTitle')}>
-            {t('bt.tap')}{#if taps > 0}<span class="badge">{taps}</span>{/if}
+          <button class="step" onclick={() => nudge(100)} aria-label={t('bt.plus')} title={t('bt.plus')}>
+            <Icon name="plus" size={14} />
           </button>
-          <button class="small" onclick={onresetsync} disabled={offsetMs === 0 && taps === 0}>{t('bt.reset')}</button>
-          <span class="spacer"></span>
-          <button class="small" onclick={() => (changeVideo = true)}>{t('bt.otherVideo')}</button>
-          <button class="small" onclick={onunlink} title={t('bt.unlinkTitle')}>{t('bt.unlink')}</button>
+          <button class="btn sm" onclick={onoffsetnow} disabled={!canSwitch} title={t('bt.nowTitle')}>{t('bt.now')}</button>
         </div>
-        <p class="hint muted">{t('bt.syncHint')}</p>
-      </div>
-    {/if}
-
-    {#if showSearch}
-      <div class="search">
-        <form class="row" onsubmit={submitSearch}>
-          <input type="search" bind:value={q} placeholder={t('bt.searchPlaceholder')} aria-label={t('bt.searchAria')} />
-          <button class="small primary" type="submit" disabled={searching || !q.trim()}>
-            {searching ? '…' : t('bt.search')}
+        <div class="frow">
+          <button class="btn sm" onclick={ontap} disabled={!canTap} title={t('bt.tapTitle')}>
+            {t('bt.tap')}{#if taps > 0}<span class="badge mono">{taps}</span>{/if}
           </button>
-          {#if changeVideo}
-            <button class="small" type="button" onclick={() => (changeVideo = false)}>{t('bt.back')}</button>
-          {/if}
-        </form>
-
-        {#if searchUnavailable}
-          <div class="unavailable">
-            <p class="muted">{t('bt.unavailable')}</p>
-            <a class="button-like" href={youtubeSearchUrl(q)} target="_blank" rel="noopener noreferrer">
-              {t('bt.openYoutube')}
-            </a>
-            <details>
-              <summary class="muted">{t('bt.ownKey')}</summary>
-              <div class="row">
-                <input type="password" bind:value={apiKey} placeholder="AIza…" aria-label={t('bt.apiKeyAria')} autocomplete="off" />
-                <button class="small" type="button" onclick={saveKey}>{t('bt.save')}</button>
-              </div>
-              <p class="hint muted">{t('bt.keyHint')}</p>
-            </details>
-          </div>
-        {:else if searchError}
-          <div class="error">{searchError}</div>
-        {/if}
-
-        {#if results.length > 0}
-          <ul class="results">
-            {#each results as r (r.videoId)}
-              <li>
-                <button class="result" onclick={() => pick(r.videoId)} title={t('bt.useAsBacking')}>
-                  {#if r.thumbnail}<img src={r.thumbnail} alt="" loading="lazy" />{/if}
-                  <span class="meta">
-                    <span class="rtitle">{r.title}</span>
-                    <span class="muted">{r.channel}{#if r.durationSec !== null} · {fmtDuration(r.durationSec)}{/if}</span>
-                  </span>
-                </button>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-
-        <form class="row" onsubmit={submitLink}>
-          <input type="url" bind:value={link} placeholder={t('bt.linkPlaceholder')} aria-label={t('bt.linkAria')} />
-          <button class="small" type="submit" disabled={!link.trim()}>OK</button>
-        </form>
-        {#if linkError}
-          <div class="error">{linkError}</div>
-        {/if}
+          <button class="btn sm" onclick={onresetsync} disabled={offsetMs === 0 && taps === 0}>{t('bt.reset')}</button>
+        </div>
+        <label class="frow">
+          <span class="flabel narrow">{t('bt.volume')}</span>
+          <input type="range" min="0" max="100" value={volume} oninput={(e) => setVolume(Number((e.currentTarget as HTMLInputElement).value))} />
+        </label>
+        <p class="hint">{t('bt.syncHint')}</p>
       </div>
     {/if}
   {/if}
@@ -334,80 +403,84 @@
 <style>
   .backing {
     position: fixed;
-    right: 12px;
-    bottom: calc(var(--transport-h) + 12px + env(safe-area-inset-bottom));
-    width: min(360px, calc(100vw - 24px));
-    max-height: calc(100vh - var(--transport-h) - 80px);
-    overflow: auto;
+    right: 24px;
+    bottom: 104px;
     z-index: 20;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+    width: min(440px, calc(100vw - 32px));
+    max-height: calc(100vh - 200px);
+    overflow-y: auto;
+    border-radius: 20px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    box-shadow: var(--shadow);
     display: flex;
     flex-direction: column;
-    font-size: 14px;
   }
 
   .backing.collapsed {
-    width: 240px;
+    width: 280px;
   }
 
   .head {
+    min-height: 56px;
+    flex: none;
+    padding: 0 8px 0 12px;
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--border);
-    cursor: grab;
+    gap: 10px;
+    border-bottom: 1px solid var(--line);
+    cursor: move;
     user-select: none;
     touch-action: none;
   }
 
   .grip {
-    color: var(--muted);
-    letter-spacing: -2px;
+    display: inline-flex;
+    color: var(--dim);
   }
 
-  .title {
-    font-weight: 600;
-    flex: 1 1 auto;
+  .head-icon {
+    display: inline-flex;
+    color: var(--accent-ink);
   }
 
-  .seg {
-    display: flex;
+  .titles {
+    flex: 1;
+    min-width: 0;
   }
 
-  .seg button {
-    min-height: 32px;
-    padding: 4px 10px;
-    border-radius: 0;
-    margin-left: -1px;
-    font-size: 12px;
+  h2 {
+    margin: 0;
+    font-size: 15px;
     font-weight: 700;
-    letter-spacing: 0.04em;
   }
 
-  .seg button:first-child {
-    border-radius: var(--radius) 0 0 var(--radius);
-    margin-left: 0;
+  .sub {
+    font-size: 12px;
+    color: var(--muted-2);
   }
 
-  .seg button:last-child {
-    border-radius: 0 var(--radius) var(--radius) 0;
+  .hbtn {
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border-radius: 9px;
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .icon {
-    min-height: 32px;
-    min-width: 32px;
-    padding: 0;
+  .hbtn:hover {
+    color: var(--text);
+    background: var(--surface-3);
   }
 
   .video {
     position: relative;
     aspect-ratio: 16 / 9;
     background: #000;
-    flex: 0 0 auto;
+    flex: none;
   }
 
   /* iframe, яким YT.Player підміняє .host */
@@ -429,98 +502,67 @@
     pointer-events: none;
   }
 
-  .sync,
-  .search {
+  .content {
+    padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 8px;
+    gap: 14px;
   }
 
-  .search {
-    border-top: 1px solid var(--border);
+  .content > .seg {
+    border: 0;
+    background: var(--input);
+    border-radius: 11px;
+  }
+
+  .content > .seg > button {
+    font-size: 13px;
   }
 
   .row {
     display: flex;
-    align-items: center;
-    gap: 6px;
+    gap: 8px;
     flex-wrap: wrap;
   }
 
-  .row input {
-    flex: 1 1 120px;
+  .row.tight {
+    margin-top: -6px;
+  }
+
+  .field {
+    flex: 1 1 160px;
     min-width: 0;
-    font: inherit;
-    color: inherit;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 6px 10px;
-    min-height: 32px;
-  }
-
-  .offset {
-    flex: 0 0 72px !important;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .label {
-    color: var(--muted);
-    min-width: 56px;
-  }
-
-  .spacer {
-    flex: 1 1 auto;
-  }
-
-  button.small {
-    min-height: 32px;
-    padding: 4px 10px;
-    font-size: 13px;
-  }
-
-  .badge {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--accent);
-    color: var(--accent-text);
-    font-size: 11px;
-    line-height: 16px;
-  }
-
-  .hint {
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.35;
-  }
-
-  .unavailable {
+    height: 42px;
+    padding: 0 12px;
+    border-radius: 10px;
+    background: var(--input);
+    border: 1px solid var(--line-2);
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    align-items: center;
+    gap: 8px;
+    color: var(--faint);
   }
 
-  .unavailable p {
-    margin: 0;
+  .field:focus-within {
+    border-color: var(--accent);
   }
 
-  .button-like {
+  .field input {
+    flex: 1;
+    min-width: 0;
+    height: 36px;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    outline: none;
+  }
+
+  .row .btn {
+    height: 42px;
+  }
+
+  .back {
     align-self: flex-start;
-    display: inline-block;
-    padding: 6px 12px;
-    border: 1px solid var(--accent);
-    border-radius: var(--radius);
-    color: var(--accent);
-    text-decoration: none;
-  }
-
-  details summary {
-    cursor: pointer;
-    font-size: 13px;
   }
 
   .results {
@@ -533,67 +575,288 @@
   }
 
   .result {
+    width: 100%;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid transparent;
     display: flex;
     align-items: center;
-    gap: 8px;
-    width: 100%;
+    gap: 12px;
     text-align: left;
-    padding: 4px;
-    min-height: 0;
+    color: var(--text);
   }
 
-  .result img {
-    width: 80px;
-    height: 45px;
+  .result:hover {
+    background: var(--surface-2);
+  }
+
+  .result.chosen {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+  }
+
+  .thumb {
+    width: 96px;
+    height: 54px;
+    flex: none;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--dim);
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
     object-fit: cover;
-    border-radius: 6px;
-    flex: 0 0 auto;
   }
 
   .meta {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    min-width: 0;
-    font-size: 13px;
   }
 
   .rtitle {
+    font-weight: 500;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .chosen .rtitle {
+    font-weight: 600;
+  }
+
+  .rsub {
+    font-size: 12px;
+    color: var(--muted-2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .meta .muted {
-    font-size: 12px;
+  .check {
+    display: inline-flex;
+    color: var(--accent-ink);
   }
 
-  .error {
-    padding: 6px 8px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--danger) 12%, var(--panel));
-    color: var(--danger);
+  .foot {
+    flex: none;
+    padding: 14px 16px 16px;
+    background: var(--footer);
+    border-top: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .frow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 13px;
-  }
-
-  .muted {
     color: var(--muted);
   }
 
-  /* На телефоні транспорт переноситься на два рядки, тому вікно чіпляємо до верху під тулбаром,
-     а не до низу, щоб не перекривати play/стоп. */
-  @media (max-width: 640px) {
-    .backing {
-      right: 8px;
-      left: 8px;
-      width: auto;
-      top: calc(112px + env(safe-area-inset-top));
-      bottom: auto;
-      max-height: 55vh;
-    }
+  .flabel {
+    flex: 1;
+  }
 
-    .backing.collapsed {
-      left: auto;
-      width: 200px;
-    }
+  .flabel.narrow {
+    flex: 0 0 92px;
+  }
+
+  .frow input[type='range'] {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .offset {
+    width: 76px;
+    height: 34px;
+    text-align: center;
+    border-radius: 9px;
+    border: 1px solid var(--line-2);
+    background: var(--input);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .btn.sm {
+    height: 34px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .badge {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-size: 11px;
+    line-height: 16px;
+  }
+
+  .hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--faint);
+  }
+
+  .unavailable {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .unavailable p {
+    margin: 0;
+  }
+
+  .unavailable a {
+    text-decoration: none;
+  }
+
+  details {
+    align-self: stretch;
+  }
+
+  summary {
+    cursor: pointer;
+    margin-bottom: 8px;
+  }
+
+  .error-box.small {
+    margin: 0;
+    padding: 6px 10px;
+    font-size: 13px;
+  }
+
+  .video + .error-box.small {
+    margin: 8px 16px 0;
+  }
+
+  /* --- телефон --- */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    background: #000000b3;
+  }
+
+  .handle,
+  .backing:not(.mobile) .handle {
+    display: none;
+  }
+
+  .backing.mobile {
+    right: 0;
+    left: 0;
+    bottom: 0;
+    width: auto;
+    max-height: 85vh;
+    border-radius: 24px 24px 0 0;
+    border-width: 1px 0 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: none;
+  }
+
+  .backing.mobile .head {
+    position: relative;
+    min-height: 0;
+    padding: 21px 16px 12px;
+    border-bottom: 0;
+    cursor: default;
+  }
+
+  .backing.mobile .handle {
+    display: block;
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    margin-left: -20px;
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: var(--line-3);
+  }
+
+  .backing.mobile .grip {
+    display: none;
+  }
+
+  .backing.mobile:not(.collapsed) .head-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: var(--accent-soft);
+    align-items: center;
+    justify-content: center;
+  }
+
+  .backing.mobile:not(.collapsed) h2 {
+    font-size: 18px;
+  }
+
+  .backing.mobile:not(.collapsed) .hbtn {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--surface-3);
+    color: var(--text-2);
+  }
+
+  .backing.mobile .content {
+    padding-top: 4px;
+  }
+
+  .backing.mobile .field,
+  .backing.mobile .row .btn {
+    height: 48px;
+  }
+
+  .backing.mobile .thumb {
+    width: 88px;
+    height: 50px;
+  }
+
+  .backing.mobile .foot {
+    margin: 0 16px 16px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    background: var(--input);
+  }
+
+  /* Згорнутий на телефоні: міні-плеєр над транспортом, ноти лишаються видимими. */
+  .backing.mobile.collapsed {
+    left: auto;
+    right: 12px;
+    bottom: calc(200px + env(safe-area-inset-bottom));
+    width: 220px;
+    border-radius: 16px;
+    border-width: 1px;
+    padding-bottom: 0;
+    box-shadow: var(--shadow);
+  }
+
+  .backing.mobile.collapsed .head {
+    padding: 4px 4px 4px 12px;
+  }
+
+  .backing.mobile.collapsed h2 {
+    font-size: 13px;
   }
 </style>

@@ -49,3 +49,10 @@ export function t(key: Key, params?: Record<string, string | number>): string {
   if (!params) return s
   return s.replace(/\{(\w+)\}/g, (m, p: string) => (p in params ? String(params[p]) : m))
 }
+
+/** Рядок із числом у правильній граматичній формі: ключі `${base}.one|few|many|other`, параметр {n}. */
+export function tn(base: 'n.tracks' | 'n.strings', n: number): string {
+  const cat = new Intl.PluralRules(i18n.locale).select(n)
+  const form = cat === 'one' || cat === 'few' || cat === 'many' ? cat : 'other'
+  return t(`${base}.${form}` as Key, { n })
+}

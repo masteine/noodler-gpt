@@ -1,23 +1,25 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { listRecent, loadRecent, removeRecent, clearRecent, type RecentEntry } from './recent'
+  import Icon from '../ui/Icon.svelte'
   import { i18n, t } from '../i18n/index.svelte'
 
   interface Props {
     onopen: (name: string, data: Uint8Array) => void
     /** Зміна значення змушує перечитати список. */
     refreshKey?: number
-    /** Компактний режим для тулбара: список ховається у випадне меню. */
-    compact?: boolean
+    /** Назва відкритого зараз файлу — його рядок підсвічується. */
+    current?: string | null
+    /** aside — у боковій панелі (без списку нічого не показує); page — на стартовому екрані. */
+    variant?: 'aside' | 'page'
   }
 
-  let { onopen, refreshKey = 0, compact = false }: Props = $props()
+  let { onopen, refreshKey = 0, current = null, variant = 'page' }: Props = $props()
 
   let items = $state<RecentEntry[]>([])
   let loaded = $state(false)
   let busy = $state(false)
   let now = $state(Date.now())
-  let menu = $state<HTMLDetailsElement>()
 
   async function refresh() {
     items = await listRecent()
@@ -26,8 +28,8 @@
   }
 
   onMount(() => {
-    const t = setInterval(() => (now = Date.now()), 60_000)
-    return () => clearInterval(t)
+    const timer = setInterval(() => (now = Date.now()), 60_000)
+    return () => clearInterval(timer)
   })
 
   $effect(() => {
@@ -44,7 +46,6 @@
         await refresh()
         return
       }
-      if (menu) menu.open = false
       onopen(rec.name, new Uint8Array(rec.data))
       await refresh()
     } finally {
@@ -60,6 +61,12 @@
   async function clearAll() {
     await clearRecent()
     await refresh()
+  }
+
+  /** Розширення файлу як бейдж: GP, GP5, GPX… */
+  function badge(name: string): string {
+    const dot = name.lastIndexOf('.')
+    return dot < 0 ? '?' : name.slice(dot + 1, dot + 5).toUpperCase()
   }
 
   function fmtSize(bytes: number): string {
@@ -79,152 +86,182 @@
   }
 </script>
 
-{#snippet list()}
-  {#if items.length === 0}
-    <p class="none muted">{loaded ? t('recent.none') : t('recent.loading')}</p>
-  {:else}
-    <ul>
-      {#each items as item (item.id)}
-        <li>
-          <button class="open" onclick={() => open(item)} disabled={busy} title={item.name}>
-            <span class="name">{item.name}</span>
-            <span class="meta muted">{fmtSize(item.size)} · {fmtAgo(item.openedAt, now)}</span>
-          </button>
-          <button class="del" onclick={() => remove(item)} title={t('recent.remove')} aria-label={t('recent.removeAria', { name: item.name })}>✕</button>
-        </li>
-      {/each}
-    </ul>
-    <button class="clear" onclick={clearAll}>{t('recent.clear')}</button>
-  {/if}
-{/snippet}
+{#if variant === 'page' || items.length > 0}
+  <section class="recent {variant}">
+    <div class="head">
+      <h2 class="eyebrow">{t('recent.title')}</h2>
+      {#if items.length > 0}
+        <button class="clear" onclick={clearAll}>{t('recent.clear')}</button>
+      {/if}
+    </div>
 
-{#if compact}
-  <details class="recent compact" bind:this={menu}>
-    <summary>{t('recent.title')}{items.length ? ` (${items.length})` : ''}</summary>
-    <div class="panel">{@render list()}</div>
-  </details>
-{:else}
-  <section class="recent">
-    <h3>{t('recent.title')}</h3>
-    {@render list()}
+    {#if items.length === 0}
+      <div class="none">
+        <Icon name="clock" size={20} />
+        <span>{loaded ? t('recent.none') : t('recent.loading')}</span>
+      </div>
+    {:else}
+      <ul>
+        {#each items as item (item.id)}
+          <li class:current={item.name === current}>
+            <button class="open" onclick={() => open(item)} disabled={busy} title="{item.name} · {fmtSize(item.size)}">
+              <span class="badge mono">{badge(item.name)}</span>
+              <span class="text">
+                <span class="name">{item.name}</span>
+                <span class="ago">{fmtAgo(item.openedAt, now)}</span>
+              </span>
+            </button>
+            <button class="del" onclick={() => remove(item)} title={t('recent.remove')} aria-label={t('recent.removeAria', { name: item.name })}>
+              <Icon name="x" size={14} />
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </section>
 {/if}
 
 <style>
   .recent {
-    pointer-events: auto;
-    text-align: left;
-    width: min(420px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .recent.page {
+    gap: 12px;
+  }
+
+  .head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+
+  .recent.page .head {
+    margin-bottom: 0;
+  }
+
+  .clear {
+    font-size: 12px;
+    color: var(--faint);
+  }
+
+  .clear:hover {
     color: var(--text);
   }
 
-  h3 {
-    margin: 0 0 8px;
-    font-size: 0.95rem;
-    color: var(--muted);
-    font-weight: 600;
-  }
-
-  .muted {
-    color: var(--muted);
-  }
-
   .none {
-    margin: 0;
-    font-size: 0.9rem;
+    padding: 20px;
+    border-radius: 16px;
+    border: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    color: var(--muted);
+  }
+
+  .none :global(svg) {
+    flex: none;
   }
 
   ul {
     list-style: none;
-    margin: 0 0 8px;
+    margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     max-height: 50vh;
     overflow-y: auto;
   }
 
   li {
+    position: relative;
     display: flex;
-    gap: 4px;
+    border-radius: 10px;
+  }
+
+  li:hover,
+  li.current {
+    background: var(--surface-2);
   }
 
   .open {
     flex: 1 1 auto;
     min-width: 0;
+    min-height: 48px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+    color: var(--text);
+  }
+
+  .badge {
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border-radius: 8px;
+    background: var(--surface-3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  li.current .badge {
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+  }
+
+  .text {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    text-align: left;
   }
 
   .name {
-    max-width: 100%;
+    font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .meta {
-    font-size: 0.8rem;
+  .ago {
+    font-size: 12px;
+    color: var(--muted-2);
   }
 
   .del {
-    flex: 0 0 auto;
-    padding: 8px 12px;
+    flex: none;
+    width: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--faint);
+    opacity: 0;
+  }
+
+  li:hover .del,
+  .del:focus-visible {
+    opacity: 1;
   }
 
   .del:hover {
     color: var(--danger);
-    border-color: var(--danger);
   }
 
-  .clear {
-    font-size: 0.85rem;
-    min-height: 32px;
-    padding: 4px 12px;
-  }
-
-  .compact {
-    position: relative;
-    width: auto;
-  }
-
-  summary {
-    list-style: none;
-    cursor: pointer;
-    user-select: none;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 8px 14px;
-    min-height: 40px;
-    display: inline-flex;
-    align-items: center;
-    touch-action: manipulation;
-  }
-
-  summary::-webkit-details-marker {
-    display: none;
-  }
-
-  summary:hover,
-  .compact[open] summary {
-    border-color: var(--accent);
-  }
-
-  .panel {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 20;
-    width: min(360px, calc(100vw - 24px));
-    padding: 10px;
-    background: var(--panel);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: 0 6px 24px rgb(0 0 0 / 0.2);
+  /* На тач-екранах наведення немає, тож хрестик видно завжди. */
+  @media (hover: none) {
+    .del {
+      opacity: 0.7;
+    }
   }
 </style>

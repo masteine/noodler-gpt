@@ -1,32 +1,124 @@
+/* Дизайн-токени. Світла тема — базова; темна вмикається системою або перемикачем (data-theme на <html>). */
 :root {
-  --bg: #f6f7f9;
-  --panel: #ffffff;
-  --text: #16181d;
-  --muted: #6b7280;
-  --border: #e3e5ea;
-  --accent: #1f6feb;
-  --accent-text: #ffffff;
-  --danger: #d1242f;
-  --radius: 10px;
-  --transport-h: 64px;
+  --bg: #f4f3ef;
+  --bg-sunken: #efede8;
+  --well: #f0eee9;
+  --surface: #ffffff;
+  --surface-2: #ffffff;
+  --surface-3: #eceae4;
+  --card: #ffffff;
+  --footer: #ffffff;
+  --input: #f4f3ef;
+  --seg-on: #ffffff;
+  --seg-on-text: #18181b;
+  --seg-on-shadow: 0 1px 2px #0000001a;
+  --line: #e2e0d9;
+  --line-2: #e2e0d9;
+  --line-3: #d6d3cb;
+  --text: #18181b;
+  --text-2: #3f3f46;
+  --muted: #52525b;
+  --muted-2: #5b5b63;
+  --faint: #6b6b73;
+  --dim: #a1a1aa;
 
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 16px;
+  --accent: #f5a524;
+  --on-accent: #1a1203;
+  --accent-ink: #b45309;
+  --accent-soft: #fdf0d5;
+  --accent-line: color-mix(in srgb, var(--accent) 60%, transparent);
+
+  --paper: #ffffff;
+  --paper-ink: #1c1b19;
+  --paper-hl: #fdf0d5;
+
+  --ok: #16a34a;
+  --ok-text: #15803d;
+  --danger: #c2410c;
+  --track-2: #4f6bff;
+  --shadow: 0 24px 60px #0000002e;
+
+  --radius: 10px;
+  --font: 'Onest Variable', 'Onest', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  font-family: var(--font);
+  font-size: 14px;
   line-height: 1.4;
   color: var(--text);
   background: var(--bg);
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
+/* Темна палітра: два селектори, бо вона потрібна і за системним налаштуванням, і за явним вибором. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --panel: #181b22;
-    --text: #e6e8ee;
-    --muted: #9aa1ad;
-    --border: #2a2e37;
-    --accent: #4c8dff;
+  :root:not([data-theme='light']) {
+    --bg: #0f1012;
+    --bg-sunken: #0b0c0e;
+    --well: #17181b;
+    --surface: #17181b;
+    --surface-2: #1a1b1e;
+    --surface-3: #1f2024;
+    --card: #141518;
+    --footer: #131417;
+    --input: #0f1012;
+    --seg-on: #2a2b31;
+    --seg-on-text: #ffffff;
+    --seg-on-shadow: none;
+    --line: #222327;
+    --line-2: #2a2b30;
+    --line-3: #34353b;
+    --text: #ededef;
+    --text-2: #d4d4d8;
+    --muted: #a6a6af;
+    --muted-2: #9a9aa3;
+    --faint: #8a8a93;
+    --dim: #5a5b63;
+    --accent-ink: #f5a524;
+    --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+    --paper: #f7f4ec;
+    --paper-hl: #f7e6c8;
+    --ok: #4ade80;
+    --ok-text: #86efac;
+    --danger: #f87171;
+    --track-2: #6e8bff;
+    --shadow: 0 24px 60px #00000080;
+    color-scheme: dark;
   }
+}
+
+:root[data-theme='dark'] {
+  --bg: #0f1012;
+  --bg-sunken: #0b0c0e;
+  --well: #17181b;
+  --surface: #17181b;
+  --surface-2: #1a1b1e;
+  --surface-3: #1f2024;
+  --card: #141518;
+  --footer: #131417;
+  --input: #0f1012;
+  --seg-on: #2a2b31;
+  --seg-on-text: #ffffff;
+  --seg-on-shadow: none;
+  --line: #222327;
+  --line-2: #2a2b30;
+  --line-3: #34353b;
+  --text: #ededef;
+  --text-2: #d4d4d8;
+  --muted: #a6a6af;
+  --muted-2: #9a9aa3;
+  --faint: #8a8a93;
+  --dim: #5a5b63;
+  --accent-ink: #f5a524;
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --paper: #f7f4ec;
+  --paper-hl: #f7e6c8;
+  --ok: #4ade80;
+  --ok-text: #86efac;
+  --danger: #f87171;
+  --track-2: #6e8bff;
+  --shadow: 0 24px 60px #00000080;
+  color-scheme: dark;
 }
 
 * {
@@ -53,46 +145,275 @@ body {
 button {
   font: inherit;
   color: inherit;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 8px 14px;
+  background: none;
+  border: 0;
+  padding: 0;
   cursor: pointer;
-  min-height: 40px;
   touch-action: manipulation;
 }
 
-button:hover {
-  border-color: var(--accent);
-}
-
 button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: default;
 }
 
-button.primary {
-  background: var(--accent);
-  color: var(--accent-text);
-  border-color: var(--accent);
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-button.active {
-  border-color: var(--accent);
-  color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+input,
+select {
+  font: inherit;
+  color: inherit;
 }
 
 input[type='range'] {
   accent-color: var(--accent);
 }
 
-select {
-  font: inherit;
-  color: inherit;
-  background: var(--panel);
-  border: 1px solid var(--border);
+input::placeholder {
+  color: var(--faint);
+}
+
+a {
+  color: var(--accent-ink);
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Розділювач у секціях: «ДОРІЖКИ», «НЕЩОДАВНІ». */
+.eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Кнопки */
+.btn {
+  height: 40px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   border-radius: var(--radius);
-  padding: 8px 10px;
-  min-height: 40px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.btn:not(:disabled):hover {
+  border-color: var(--line-3);
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+.btn.primary:not(:disabled):hover {
+  filter: brightness(1.06);
+}
+
+.btn.lg {
+  height: 48px;
+  padding: 0 22px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+
+/* Перемикач-кнопка (Клік, Відлік, Луп…): у натиснутому стані — акцентна. */
+.toggle {
+  height: 44px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 12px;
+  border: 1px solid var(--line-2);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.toggle[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.icon-btn:not(:disabled):hover {
+  color: var(--text);
+}
+
+.icon-btn.plain {
+  border-color: transparent;
+  background: transparent;
+}
+
+/* Маленька квадратна кнопка-крок (−/+). */
+.step {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+/* Сегментований перемикач */
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.seg > button {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.seg > button[aria-pressed='true'] {
+  background: var(--seg-on);
+  color: var(--seg-on-text);
+  font-weight: 600;
+  box-shadow: var(--seg-on-shadow);
+}
+
+.seg.fill {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+}
+
+.seg.fill > button {
+  padding: 0 6px;
+}
+
+kbd {
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid var(--line-3);
+  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+/* Перемикач-тумблер (role=switch) */
+.switch {
+  width: 48px;
+  height: 28px;
+  flex: none;
+  padding: 3px;
+  border-radius: 14px;
+  background: var(--line-3);
+  display: flex;
+  transition: background 0.15s;
+}
+
+.switch::after {
+  content: '';
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: #fff;
+  transition: transform 0.15s;
+}
+
+.switch[aria-checked='true'] {
+  background: var(--accent);
+}
+
+.switch[aria-checked='true']::after {
+  transform: translateX(20px);
+}
+
+/* Картка-панель для налаштувань праворуч у метрономі й тюнері. */
+.panel {
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.note-line {
+  margin: 0;
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--faint);
+}
+
+.note-line svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.error-box {
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+/* Поповер «Гарячі клавіші» та подібні */
+[popover] {
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+[popover]::backdrop {
+  background: transparent;
 }
