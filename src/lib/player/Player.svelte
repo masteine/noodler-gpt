@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte'
   import * as alphaTab from '@coderline/alphatab'
+  import { applyTempoTexts } from '../score/tempoText'
   import { demoTex } from './demo'
   import { session } from '../session.svelte'
   import { saveRecent } from '../storage'
@@ -220,7 +221,18 @@
     fileSize = data.byteLength
     // alphaTab може забрати буфер собі, тому в сховище кладемо окрему копію.
     const copy = persist ? data.slice().buffer : null
-    if (!api.load(data)) {
+    let score: alphaTab.model.Score
+    try {
+      score = alphaTab.importer.ScoreLoader.loadScoreFromBytes(data, api.settings)
+    } catch (e) {
+      console.warn('[player] load failed', e)
+      error = t('player.openFailed', { name })
+      return
+    }
+    // Написи «132 bpm» біля нот стають змінами темпу: у gp3 темп один на файл, а автори дописують решту текстом.
+    const tempoTexts = applyTempoTexts(score)
+    if (tempoTexts) console.info(`[player] ${tempoTexts} tempo change(s) taken from beat text`)
+    if (!api.load(score)) {
       error = t('player.openFailed', { name })
       return
     }
