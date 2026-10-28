@@ -650,6 +650,7 @@
       })
       console.info('[autosync] result', {
         offsetMs: result.offsetMs,
+        latencyMs: Math.round(recorder.latencySeconds * 1000),
         cost: result.cost,
         confidence: result.confidence,
         shift: result.shift,

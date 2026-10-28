@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { audioChroma, cosineDistance, fft, firstSound, rotate, unit } from './chroma'
+import { ChromaStream, ONSET_FPS, audioChroma, cosineDistance, fft, firstSound, rotate, unit } from './chroma'
 
 const SR = 22050
 
@@ -60,6 +60,41 @@ describe('audioChroma', () => {
     const c = audioChroma(audio, SR)[8]
     const sorted = [...c.keys()].sort((a, b) => c[b] - c[a]).slice(0, 3)
     expect(new Set(sorted)).toEqual(new Set([4, 8, 11]))
+  })
+})
+
+describe('ChromaStream.onsets', () => {
+  it('атака ноти дає пік у її класі висоти в межах 30 мс від початку', () => {
+    const audio = new Float32Array(SR * 3)
+    mix(audio, tone(57, 1.5), Math.round(SR * 1.2)) // A3 на 1.2 с
+    mix(audio, tone(62, 1), Math.round(SR * 2.1)) // D4 на 2.1 с
+    const stream = new ChromaStream(SR)
+    stream.push(audio)
+    const onsets = stream.onsets()
+    expect(onsets.length).toBeGreaterThan(2.5 * ONSET_FPS)
+    const peakOf = (pc: number) => {
+      let best = 0
+      for (let i = 1; i < onsets.length; i++) if (onsets[i][pc] > onsets[best][pc]) best = i
+      return best
+    }
+    expect(Math.abs(peakOf(9) / ONSET_FPS - 1.2)).toBeLessThan(0.03)
+    expect(Math.abs(peakOf(2) / ONSET_FPS - 2.1)).toBeLessThan(0.03)
+    // У мить атаки A клас D ще мовчить.
+    const atA = peakOf(9)
+    expect(onsets[atA][2]).toBeLessThan(onsets[atA][9] * 0.3)
+  })
+
+  it('потокове додавання дає ті самі атаки, що й цілий буфер', () => {
+    const audio = new Float32Array(SR * 2)
+    mix(audio, tone(64, 1), SR)
+    const whole = new ChromaStream(SR)
+    whole.push(audio)
+    const piecewise = new ChromaStream(SR)
+    for (let i = 0; i < audio.length; i += 1000) piecewise.push(audio.subarray(i, Math.min(audio.length, i + 1000)))
+    const a = whole.onsets()
+    const b = piecewise.onsets()
+    expect(b.length).toBe(a.length)
+    for (let i = 0; i < a.length; i += 7) for (let pc = 0; pc < 12; pc++) expect(b[i][pc]).toBeCloseTo(a[i][pc], 3)
   })
 })
 

@@ -41,6 +41,15 @@ class NoodlerRecorder extends AudioWorkletProcessor {
 registerProcessor('noodler-recorder', NoodlerRecorder)
 `
 
+/** Клацання для вимірювання затримки: частота, гучність, тривалість. */
+const CLICK_HZ = 1000
+const CLICK_GAIN = 0.2
+const CLICK_SECONDS = 0.05
+/** Скільки чекати на клацання в записі; більша затримка захоплення неправдоподібна. */
+const CLICK_WAIT_SECONDS = 1.2
+/** Поріг амплітуди, з якого вважаємо, що клацання дійшло. */
+const CLICK_THRESHOLD = 0.02
+
 export class TabAudioRecorder {
   private chunks: Float32Array[] = []
   private total = 0
@@ -48,6 +57,11 @@ export class TabAudioRecorder {
   /** Користувач зупинив «показ» вкладки в панелі браузера. */
   ended = false
   onended: (() => void) | null = null
+  /**
+   * Затримка захоплення в секундах: на стільки пізніше звук вкладки потрапляє в запис, ніж лунає.
+   * Міряється в open() коротким клацанням через той самий шлях, що й звук відео. 0 — не виміряно.
+   */
+  latencySeconds = 0
 
   private constructor(
     private readonly stream: MediaStream,
@@ -101,7 +115,9 @@ export class TabAudioRecorder {
       // Вузол мусить бути в графі до destination, щоб process() викликався; на вихід іде тиша.
       node.connect(context.destination)
       await context.resume()
-      return new TabAudioRecorder(stream, context, node)
+      const recorder = new TabAudioRecorder(stream, context, node)
+      await recorder.calibrate()
+      return recorder
     } catch (e) {
       for (const track of stream.getTracks()) track.stop()
       void context.close()
@@ -111,6 +127,48 @@ export class TabAudioRecorder {
 
   get sampleRate(): number {
     return this.context.sampleRate
+  }
+
+  /**
+   * Програє тихе клацання й дивиться, через скільки воно з’явилося в записі. Захоплення вкладки
+   * йде через звуковий конвеєр браузера з помітною затримкою (десятки–сотні мс), а мітки без цієї
+   * поправки запізнювались би рівно на стільки ж.
+   */
+  private async calibrate(): Promise<void> {
+    const ctx = this.context
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.frequency.value = CLICK_HZ
+    gain.gain.value = 0
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    this.start()
+    const startedAt = ctx.currentTime
+    const at = startedAt + 0.25
+    gain.gain.setValueAtTime(0, at)
+    gain.gain.linearRampToValueAtTime(CLICK_GAIN, at + 0.005)
+    gain.gain.setValueAtTime(CLICK_GAIN, at + CLICK_SECONDS)
+    gain.gain.linearRampToValueAtTime(0, at + CLICK_SECONDS + 0.01)
+    osc.start(at)
+    osc.stop(at + CLICK_SECONDS + 0.02)
+    await new Promise((r) => setTimeout(r, (at - startedAt + CLICK_WAIT_SECONDS) * 1000))
+    this.stop()
+    osc.disconnect()
+    gain.disconnect()
+    const rate = ctx.sampleRate
+    const skip = Math.round((at - startedAt - 0.05) * rate)
+    let index = 0
+    let found = -1
+    for (const chunk of this.drain()) {
+      for (let i = 0; i < chunk.length && found < 0; i++) if (index + i >= skip && Math.abs(chunk[i]) > CLICK_THRESHOLD) found = index + i
+      if (found >= 0) break
+      index += chunk.length
+    }
+    this.chunks = []
+    this.total = 0
+    if (found < 0) return
+    const latency = found / rate - (at - startedAt)
+    if (latency >= -0.05 && latency <= CLICK_WAIT_SECONDS) this.latencySeconds = Math.max(0, latency)
   }
 
   /** Скільки секунд звуку вже зібрано. */

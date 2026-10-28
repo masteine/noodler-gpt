@@ -63,6 +63,25 @@ export function notesFromScore(score: alphaTab.model.Score, tickCache: alphaTab.
   return events.filter((e) => e.onsetMs <= maxMs).sort((a, b) => a.onsetMs - b.onsetMs)
 }
 
+/** Атака: мить у табі (мс) і класи висот нот, що починаються в цю мить (без повторів). */
+export interface Onset {
+  ms: number
+  classes: number[]
+}
+
+/** Атаки з нот: ноти з однаковим початком зливаються в одну. */
+export function onsetsFromNotes(notes: readonly NoteEvent[]): Onset[] {
+  const out: Onset[] = []
+  for (const n of notes) {
+    const pc = ((n.midi % 12) + 12) % 12
+    const prev = out[out.length - 1]
+    if (prev && Math.abs(prev.ms - n.onsetMs) < 1) {
+      if (!prev.classes.includes(pc)) prev.classes.push(pc)
+    } else out.push({ ms: n.onsetMs, classes: [pc] })
+  }
+  return out
+}
+
 /** Такт у порядку відтворення: індекс, котрий раз звучить, час початку в табі (мс). */
 export interface BarTime {
   barIndex: number
@@ -115,8 +134,9 @@ export function chromaFromNotes(notes: readonly NoteEvent[], seconds: number, fp
   const raw: Float32Array[] = []
   for (let f = 0; f < count; f++) raw.push(new Float32Array(12))
   for (const n of notes) {
-    const first = Math.max(0, Math.floor((n.onsetMs / 1000) * fps))
-    const last = Math.min(count - 1, Math.floor(((n.onsetMs + Math.max(n.durationMs, 250)) / 1000) * fps))
+    // Кадр f описує мить f/fps (як у хромі звуку, де вікно центроване на часі кадру).
+    const first = Math.max(0, Math.round((n.onsetMs / 1000) * fps))
+    const last = Math.min(count - 1, Math.round(((n.onsetMs + Math.max(n.durationMs, 250)) / 1000) * fps))
     const pc = ((n.midi % 12) + 12) % 12
     for (let f = first; f <= last; f++) {
       const age = (f / fps - n.onsetMs / 1000) / DECAY_S

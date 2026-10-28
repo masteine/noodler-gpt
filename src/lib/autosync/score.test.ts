@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import * as alphaTab from '@coderline/alphatab'
 import { demoTex } from '../player/demo'
-import { chromaFromNotes, notesFromScore } from './score'
+import { chromaFromNotes, notesFromScore, onsetsFromNotes } from './score'
 import { firstSound } from './chroma'
 
 function loadDemo() {
@@ -35,5 +35,18 @@ describe('notesFromScore', () => {
     expect(notes.every((n) => n.onsetMs <= 3000)).toBe(true)
     const ref = chromaFromNotes(notesFromScore(score, tickCache, 60_000), 10)
     expect(firstSound(ref)).toBe(0)
+  })
+
+  it('onsetsFromNotes зливає ноти з однаковим початком у одну атаку з класами висот', () => {
+    const onsets = onsetsFromNotes([
+      { onsetMs: 0, durationMs: 500, midi: 40 },
+      { onsetMs: 0, durationMs: 500, midi: 52 },
+      { onsetMs: 0, durationMs: 500, midi: 47 },
+      { onsetMs: 500, durationMs: 250, midi: 43 },
+    ])
+    expect(onsets).toEqual([
+      { ms: 0, classes: [4, 11] },
+      { ms: 500, classes: [7] },
+    ])
   })
 })

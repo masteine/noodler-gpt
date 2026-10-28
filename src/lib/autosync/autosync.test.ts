@@ -107,7 +107,9 @@ class FakeRecorder implements RecorderLike {
   private active = false
   constructor(
     private world: World,
-    private latency = 0.04,
+    private latency = 0.12,
+    /** Чи «виміряв» рекордер свою затримку (як справжній — клацанням). */
+    readonly latencySeconds = latency,
   ) {}
   get seconds() {
     return this.active ? Math.max(0, this.world.clock - this.from - this.latency) : 0
@@ -162,7 +164,7 @@ describe('autoSyncOffset', () => {
     expect(result.points[0]).toEqual({ barIndex: 0, barOccurence: 0, barPosition: 0, millisecondOffset: result.offsetMs })
     expect(result.points.length).toBeGreaterThanOrEqual(5)
     for (const p of result.points) {
-      expect(Math.abs(p.millisecondOffset - warp(p.barIndex * BAR_MS) * 1000)).toBeLessThan(250)
+      expect(Math.abs(p.millisecondOffset - warp(p.barIndex * BAR_MS) * 1000)).toBeLessThan(120)
     }
     for (let i = 1; i < result.points.length; i++) expect(result.points[i].millisecondOffset).toBeGreaterThan(result.points[i - 1].millisecondOffset)
   })
@@ -179,8 +181,19 @@ describe('autoSyncOffset', () => {
     const lastPoint = result.points.at(-1)!
     expect(lastPoint.barIndex).toBe(29)
     for (const p of result.points) {
-      expect(Math.abs(p.millisecondOffset - warp(p.barIndex * BAR_MS) * 1000)).toBeLessThan(300)
+      expect(Math.abs(p.millisecondOffset - warp(p.barIndex * BAR_MS) * 1000)).toBeLessThan(120)
     }
+  })
+
+  it('невиміряна затримка захоплення зсуває всі мітки на неї', async () => {
+    const warp = linear(3, 1)
+    const world = new World(notes, warp)
+    const player = new FakePlayer(world)
+    const recorder = new FakeRecorder(world, 0.3, 0)
+    const result = await autoSyncOffset({ player, notes, bars: bars(30), recorder, sleep: makeSleep(world, player) })
+    const late = result.points.slice(1).map((p) => p.millisecondOffset - warp(p.barIndex * BAR_MS) * 1000)
+    expect(median(late)).toBeGreaterThan(200)
+    expect(median(late)).toBeLessThan(400)
   })
 
   it('таб із паузою на початку: зсув ураховує, що перша нота не на такті 1', async () => {
