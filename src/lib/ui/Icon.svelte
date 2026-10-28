@@ -24,6 +24,7 @@
     | 'check'
     | 'x'
     | 'chevron-down'
+    | 'chevron-left'
     | 'chevron-up'
     | 'grip'
     | 'upload'
@@ -107,6 +108,8 @@
       <path d="m6 9 6 6 6-6" />
     {:else if name === 'chevron-up'}
       <path d="m6 15 6-6 6 6" />
+    {:else if name === 'chevron-left'}
+      <path d="m15 6-6 6 6 6" />
     {:else if name === 'upload'}
       <path d="M12 15V3" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" />
     {:else if name === 'clock'}

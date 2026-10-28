@@ -14,10 +14,10 @@
   import Logo from '../ui/Logo.svelte'
   import Prefs from '../ui/Prefs.svelte'
   import { t, tn, type Key } from '../i18n/index.svelte'
-  import { offsetOf, plainPoints, tapCount, withOffset, withTap, type BarRef, type FlatSyncPoint } from '../youtube/sync'
+  import { naiveOrder, offsetOf, plainPoints, sortPoints, tapCount, withOffset, withTap, type BarRef, type FlatSyncPoint } from '../youtube/sync'
   import { NoTabAudioError, TabAudioRecorder, isAutoSyncSupported } from '../autosync/capture'
   import { CancelledError, NoNotesError, REF_SECONDS, autoSyncOffset, type AutoSyncProgress } from '../autosync/autosync'
-  import { notesFromScore } from '../autosync/score'
+  import { barsFromTickCache, notesFromScore } from '../autosync/score'
   // Ресурси alphaTab беремо через URL-імпорти Vite, щоб шляхи були правильні і в dev, і в build.
   import soundFontUrl from '@coderline/alphatab/soundfont/sonivox.sf3?url'
   import bravuraWoff2 from '@coderline/alphatab/font/Bravura.woff2?url'
@@ -92,6 +92,8 @@
   let autoSyncNote = $state<string | null>(null)
   let autoSyncAbort: AbortController | null = null
   const canAutoSync = isAutoSyncSupported()
+  /** Панель доріжок на десктопі згорнута (запам'ятовується). */
+  let asideCollapsed = $state(readAsideCollapsed())
   /** Перемкнутися на ORIG, щойно плеєр YouTube стане готовим. */
   let wantYoutube = false
   let searchSeq = 0
@@ -627,26 +629,44 @@
     api.stop()
     h.suspended = true
     autoSyncNote = null
-    autoSync = { phase: 'starting', seconds: 0, total: 0 }
+    autoSync = { phase: 'starting', seconds: 0, bars: 0 }
     const abort = new AbortController()
     autoSyncAbort = abort
     let recorder: TabAudioRecorder | null = null
     try {
       recorder = await TabAudioRecorder.open()
       recorder.onended = () => abort.abort()
-      const notes = notesFromScore(api.score, api.tickCache, (REF_SECONDS + 60) * 1000)
+      const bars = barsFromTickCache(api.tickCache)
+      const tabMs = bars.length ? bars[bars.length - 1].startMs + 60_000 : REF_SECONDS * 1000
+      const notes = notesFromScore(api.score, api.tickCache, tabMs)
       const result = await autoSyncOffset({
         player: h.player,
         notes,
+        bars,
         recorder,
         signal: abort.signal,
         onProgress: (p) => (autoSync = p),
+        debug: (m) => console.debug('[autosync]', m),
+      })
+      console.info('[autosync] result', {
+        offsetMs: result.offsetMs,
+        cost: result.cost,
+        confidence: result.confidence,
+        shift: result.shift,
+        trackedBars: result.trackedBars,
+        points: result.points.map((p) => `${p.barIndex + 1}@${fmtMs(p.millisecondOffset)}`).join(' '),
       })
       if (result.confidence === 'poor') {
         autoSyncNote = t('bt.autoPoor')
       } else {
-        setOffset(result.offsetMs)
-        let note = t(result.confidence === 'good' ? 'bt.autoGood' : 'bt.autoFair', { time: fmtMs(result.offsetMs) })
+        const cur = currentBar()
+        syncPoints = sortPoints(result.points, cur?.order ?? naiveOrder)
+        applySyncPoints()
+        persistLink()
+        let note = t(result.confidence === 'good' ? 'bt.autoGood' : 'bt.autoFair', {
+          time: fmtMs(result.offsetMs),
+          bars: tn('n.bars', result.trackedBars),
+        })
         if (result.shift !== 0) {
           const up = result.shift <= 6
           note += ' ' + t(up ? 'bt.autoHigher' : 'bt.autoLower', { n: up ? result.shift : 12 - result.shift })
@@ -679,6 +699,26 @@
     const m = Math.floor(tenths / 600)
     const s = (tenths - m * 600) / 10
     return `${m}:${s.toFixed(1).padStart(4, '0')}`
+  }
+
+  // --- панель доріжок (десктоп) ---
+  const ASIDE_KEY = 'noodler.aside'
+
+  function readAsideCollapsed(): boolean {
+    try {
+      return localStorage.getItem(ASIDE_KEY) === 'collapsed'
+    } catch {
+      return false
+    }
+  }
+
+  function toggleAside() {
+    asideCollapsed = !asideCollapsed
+    try {
+      localStorage.setItem(ASIDE_KEY, asideCollapsed ? 'collapsed' : 'open')
+    } catch {
+      /* приватний режим */
+    }
   }
 
   function resetSync() {
@@ -904,11 +944,22 @@
     <div class="error-box error">{error}</div>
   {/if}
 
-  <div class="body">
-    {#if hasScore}
+  <div class="body" class:aside-collapsed={asideCollapsed}>
+    {#if hasScore && asideCollapsed}
+      <div class="aside-rail">
+        <button class="icon-btn plain big" onclick={toggleAside} aria-label={t('player.showAside')} title={t('player.showAside')} aria-expanded="false">
+          <Icon name="layers" size={20} />
+        </button>
+      </div>
+    {:else if hasScore}
       <aside class="aside">
         <section class="side-section">
-          <h2 class="eyebrow">{t('player.tracks')}</h2>
+          <div class="side-head">
+            <h2 class="eyebrow">{t('player.tracks')}</h2>
+            <button class="icon-btn plain" onclick={toggleAside} aria-label={t('player.hideAside')} title={t('player.hideAside')} aria-expanded="true">
+              <Icon name="chevron-left" size={18} />
+            </button>
+          </div>
           {@render trackList()}
         </section>
         <RecentFiles variant="aside" current={fileName} onopen={(name, data) => openBytes(name, data, false)} refreshKey={recentKey} />
@@ -1240,6 +1291,30 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+  }
+
+  .side-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .side-head .eyebrow {
+    margin: 0;
+  }
+
+  /* Згорнута панель доріжок: вузька смужка з кнопкою, щоб повернути її. */
+  .body.aside-collapsed {
+    --aside-w: 56px;
+  }
+
+  .aside-rail {
+    flex: 0 0 var(--aside-w);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 12px;
   }
 
   .privacy {
@@ -1730,6 +1805,7 @@
 
     .filebar,
     .aside,
+    .aside-rail,
     .transport,
     .empty-keys {
       display: none;

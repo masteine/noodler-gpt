@@ -21,7 +21,12 @@ export interface DtwMatch {
 /** Надбавка за крок, що змінює темп (у одиницях відстані). */
 const TEMPO_PENALTY = 0.05
 
-export function subsequenceDtw(ref: readonly Float32Array[], target: readonly Float32Array[]): DtwMatch | null {
+export interface DtwOptions {
+  /** true — еталон мусить починатися з кадру 0 запису (початок уже відомий); false — початок вільний. */
+  anchored?: boolean
+}
+
+export function subsequenceDtw(ref: readonly Float32Array[], target: readonly Float32Array[], options: DtwOptions = {}): DtwMatch | null {
   const n = ref.length
   const m = target.length
   if (n < 2 || m < 2) return null
@@ -30,7 +35,8 @@ export function subsequenceDtw(ref: readonly Float32Array[], target: readonly Fl
   const D = new Float64Array(n * m).fill(Number.POSITIVE_INFINITY)
   const step = new Uint8Array(n * m) // 0 — старт, 1 — (1,1), 2 — (1,2), 3 — (2,1)
   const C = (i: number, j: number) => cosineDistance(ref[i], target[j])
-  for (let j = 0; j < m; j++) D[j] = C(0, j)
+  if (options.anchored) D[0] = C(0, 0)
+  else for (let j = 0; j < m; j++) D[j] = C(0, j)
 
   for (let i = 1; i < n; i++) {
     const row = i * m

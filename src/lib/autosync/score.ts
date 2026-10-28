@@ -63,6 +63,28 @@ export function notesFromScore(score: alphaTab.model.Score, tickCache: alphaTab.
   return events.filter((e) => e.onsetMs <= maxMs).sort((a, b) => a.onsetMs - b.onsetMs)
 }
 
+/** Такт у порядку відтворення: індекс, котрий раз звучить, час початку в табі (мс). */
+export interface BarTime {
+  barIndex: number
+  barOccurence: number
+  startMs: number
+}
+
+/** Такти в порядку відтворення (з повторами) і їхній час у синтезаторі. */
+export function barsFromTickCache(tickCache: alphaTab.midi.MidiTickLookup): BarTime[] {
+  const bars: BarTime[] = []
+  const seen = new Map<number, number>()
+  let ms = 0
+  for (const entry of tickCache.masterBars) {
+    const index = entry.masterBar.index
+    const occurrence = seen.get(index) ?? 0
+    seen.set(index, occurrence + 1)
+    bars.push({ barIndex: index, barOccurence: occurrence, startMs: ms })
+    ms = tickToMs(entry, ms)(entry.end)
+  }
+  return bars
+}
+
 /** Функція тік → мс для одного такту з урахуванням змін темпу всередині нього. */
 function tickToMs(entry: alphaTab.midi.MasterBarTickLookup, barStartMs: number): (tick: number) => number {
   const changes = entry.tempoChanges.length ? entry.tempoChanges : [{ tick: entry.start, tempo: entry.tempo }]

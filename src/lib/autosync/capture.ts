@@ -124,23 +124,15 @@ export class TabAudioRecorder {
     this.recording = true
   }
 
-  /** Усе записане одним масивом, запис триває. */
-  snapshot(): Recording {
-    const samples = new Float32Array(this.total)
-    let pos = 0
-    for (const c of this.chunks) {
-      samples.set(c, pos)
-      pos += c.length
-    }
-    return { samples, sampleRate: this.context.sampleRate }
+  /** Забирає шматки, що надійшли після попереднього drain. */
+  drain(): Float32Array[] {
+    const out = this.chunks
+    this.chunks = []
+    return out
   }
 
-  /** Зупиняє збір і віддає все записане. */
-  stop(): Recording {
+  stop(): void {
     this.recording = false
-    const rec = this.snapshot()
-    this.chunks = []
-    return rec
   }
 
   close(): void {

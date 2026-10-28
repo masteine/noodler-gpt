@@ -29,39 +29,126 @@ export interface ChromaOptions {
  * по одному на кожні 1/fps с. Вектори нормалізовані (довжина 1) або нульові для тиші.
  */
 export function audioChroma(input: Float32Array, inputRate: number, options: ChromaOptions = {}): Float32Array[] {
-  const fps = options.fps ?? CHROMA_FPS
-  const frameSize = options.frameSize ?? 8192
-  // Понижуємо частоту до ~11 кГц: бас тоді розділяється по півтонах (бін FFT ≈ 1.4 Гц), а рахунок дешевший.
-  const factor = Math.max(1, Math.floor(inputRate / TARGET_RATE))
-  const samples = factor > 1 ? decimate(input, factor) : input
-  const sampleRate = inputRate / factor
-  const hop = sampleRate / fps
-  const window = hann(frameSize)
-  const binToPc = binClasses(frameSize, sampleRate)
-  const re = new Float32Array(frameSize)
-  const im = new Float32Array(frameSize)
-  const raw: Float32Array[] = []
-  const count = Math.max(0, Math.floor(samples.length / hop))
-  for (let f = 0; f < count; f++) {
-    // Вікно центроване на моменті кадру, щоб час хроми не зсувався на половину вікна.
-    const start = Math.round(f * hop) - frameSize / 2
+  const stream = new ChromaStream(inputRate, options)
+  stream.push(input)
+  return stream.frames(true)
+}
+
+/**
+ * Потокова хрома: звук додається шматками (push), кадри рахуються, щойно для них вистачає семплів.
+ * Так під час прослуховування не треба щоразу перераховувати весь запис.
+ */
+export class ChromaStream {
+  readonly fps: number
+  private readonly frameSize: number
+  private readonly factor: number
+  private readonly hop: number
+  private readonly window: Float32Array
+  private readonly binToPc: Int8Array
+  private readonly fir: Float32Array | null
+  private readonly firHalf: number
+  /** Хвіст вхідного сигналу, потрібний FIR-фільтру для наступних вихідних семплів. */
+  private carry = new Float32Array(0)
+  private carryBase = 0
+  private nextCenter = 0
+  /** Понижений сигнал цілком. */
+  private dec = new Float32Array(1 << 16)
+  private decLength = 0
+  private raw: Float32Array[] = []
+  private readonly re: Float32Array
+  private readonly im: Float32Array
+
+  constructor(inputRate: number, options: ChromaOptions = {}) {
+    this.fps = options.fps ?? CHROMA_FPS
+    this.frameSize = options.frameSize ?? 8192
+    // Понижуємо частоту до ~11 кГц: бас тоді розділяється по півтонах (бін FFT ≈ 1.4 Гц), а рахунок дешевший.
+    this.factor = Math.max(1, Math.floor(inputRate / TARGET_RATE))
+    const rate = inputRate / this.factor
+    this.hop = rate / this.fps
+    this.window = hann(this.frameSize)
+    this.binToPc = binClasses(this.frameSize, rate)
+    this.fir = this.factor > 1 ? lowpass(this.factor) : null
+    this.firHalf = this.fir ? (this.fir.length - 1) / 2 : 0
+    this.re = new Float32Array(this.frameSize)
+    this.im = new Float32Array(this.frameSize)
+  }
+
+  /** Секунд звуку вже отримано. */
+  get seconds(): number {
+    return this.decLength / (this.hop * this.fps)
+  }
+
+  push(samples: Float32Array): void {
+    if (!this.fir) {
+      this.append(samples)
+      return
+    }
+    // Склеюємо хвіст і нові семпли; абсолютний індекс buf[0] = carryBase.
+    const buf = new Float32Array(this.carry.length + samples.length)
+    buf.set(this.carry, 0)
+    buf.set(samples, this.carry.length)
+    const base = this.carryBase
+    const half = this.firHalf
+    const taps = this.fir.length
+    const out: number[] = []
+    while (this.nextCenter + half < base + buf.length) {
+      let acc = 0
+      for (let i = 0; i < taps; i++) {
+        const idx = this.nextCenter + i - half - base
+        if (idx >= 0 && idx < buf.length) acc += buf[idx] * this.fir[i]
+      }
+      out.push(acc)
+      this.nextCenter += this.factor
+    }
+    this.append(Float32Array.from(out))
+    const keepFrom = Math.max(0, this.nextCenter - half - base)
+    this.carry = buf.slice(keepFrom)
+    this.carryBase = base + keepFrom
+  }
+
+  /**
+   * Готові кадри (CENS). З flush — також кадри в кінці, для яких бракує семплів (доповнюються нулями),
+   * як для цілого запису.
+   */
+  frames(flush = false): Float32Array[] {
+    const total = Math.floor(this.decLength / this.hop)
+    for (let f = this.raw.length; f < total; f++) {
+      const start = Math.round(f * this.hop) - this.frameSize / 2
+      if (!flush && start + this.frameSize > this.decLength) break
+      this.raw.push(this.rawFrame(start))
+    }
+    return finishChroma(this.raw)
+  }
+
+  private append(samples: Float32Array): void {
+    if (this.decLength + samples.length > this.dec.length) {
+      let size = this.dec.length * 2
+      while (size < this.decLength + samples.length) size *= 2
+      const grown = new Float32Array(size)
+      grown.set(this.dec.subarray(0, this.decLength))
+      this.dec = grown
+    }
+    this.dec.set(samples, this.decLength)
+    this.decLength += samples.length
+  }
+
+  private rawFrame(start: number): Float32Array {
+    const { re, im, frameSize } = this
     for (let i = 0; i < frameSize; i++) {
       const idx = start + i
-      const s = idx >= 0 && idx < samples.length ? samples[idx] : 0
-      re[i] = s * window[i]
+      re[i] = idx >= 0 && idx < this.decLength ? this.dec[idx] * this.window[i] : 0
       im[i] = 0
     }
     fft(re, im)
     const chroma = new Float32Array(12)
     for (let k = 1; k < frameSize / 2; k++) {
-      const pc = binToPc[k]
+      const pc = this.binToPc[k]
       if (pc < 0) continue
       // Амплітуда, не енергія: інакше гучний бас затуляє все інше.
       chroma[pc] += Math.sqrt(re[k] * re[k] + im[k] * im[k])
     }
-    raw.push(chroma)
+    return chroma
   }
-  return finishChroma(raw)
 }
 
 /** Пороги квантування CENS: частка енергії кадру → рівень 0..4. Дрібне просочування стає нулем. */
@@ -140,11 +227,8 @@ function isSilent(v: Float32Array): boolean {
   return true
 }
 
-/**
- * Проріджує сигнал у `factor` разів після низькочастотного FIR-фільтра (віконний sinc),
- * щоб високі частоти не «загорталися» вниз.
- */
-export function decimate(samples: Float32Array, factor: number): Float32Array {
+/** Низькочастотний FIR (віконний sinc) для прорідження у `factor` разів, щоб високі частоти не «загорталися» вниз. */
+function lowpass(factor: number): Float32Array {
   const taps = 8 * factor + 1
   const half = (taps - 1) / 2
   const cutoff = 0.45 / factor
@@ -158,17 +242,7 @@ export function decimate(samples: Float32Array, factor: number): Float32Array {
     sum += h[i]
   }
   for (let i = 0; i < taps; i++) h[i] /= sum
-  const out = new Float32Array(Math.floor(samples.length / factor))
-  for (let o = 0; o < out.length; o++) {
-    const center = o * factor
-    let acc = 0
-    for (let i = 0; i < taps; i++) {
-      const idx = center + i - half
-      if (idx >= 0 && idx < samples.length) acc += samples[idx] * h[i]
-    }
-    out[o] = acc
-  }
-  return out
+  return h
 }
 
 function hann(n: number): Float32Array {

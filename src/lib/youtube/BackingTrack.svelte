@@ -11,7 +11,7 @@
   import type { Source } from './handler'
   import type { AutoSyncProgress } from '../autosync/autosync'
   import Icon from '../ui/Icon.svelte'
-  import { t } from '../i18n/index.svelte'
+  import { t, tn } from '../i18n/index.svelte'
 
   interface Props {
     videoId: string | null
@@ -273,7 +273,8 @@
   </div>
 
   {#if videoId}
-    <div class="video">
+    <!-- Згорнуте вікно ховає й відео (висота 0, iframe лишається в DOM і грає далі). -->
+    <div class="video" class:hidden={collapsed}>
       {#key videoId}
         <div class="host" bind:this={videoHost}></div>
       {/key}
@@ -405,7 +406,9 @@
           <div class="frow auto" role="status">
             <span class="auto-text">
               {#if autoSync.phase === 'listening'}
-                {t('bt.autoListening', { s: Math.floor(autoSync.seconds), total: Math.round(autoSync.total) })}
+                {t('bt.autoListening', { s: Math.floor(autoSync.seconds) })}
+              {:else if autoSync.phase === 'tracking'}
+                {t('bt.autoTracking', { s: Math.floor(autoSync.seconds), bars: tn('n.bars', autoSync.bars) })}
               {:else if autoSync.phase === 'analyzing'}
                 {t('bt.autoAnalyzing')}
               {:else}
@@ -514,6 +517,12 @@
     aspect-ratio: 16 / 9;
     background: #000;
     flex: none;
+  }
+
+  .video.hidden {
+    aspect-ratio: auto;
+    height: 0;
+    overflow: hidden;
   }
 
   /* iframe, яким YT.Player підміняє .host */
